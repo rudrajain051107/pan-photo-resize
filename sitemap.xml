@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <!-- Main Pages -->
+  <url>
+    <loc>https://YOUR-DOMAIN.com/</loc>
+    <priority>1.00</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/about.html</loc>
+    <priority>0.80</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/privacy.html</loc>
+    <priority>0.90</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/terms.html</loc>
+    <priority>0.70</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/contact.html</loc>
+    <priority>0.60</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/report.html</loc>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/404.html</loc>
+    <priority>0.30</priority>
+  </url>
+
+  <!-- Blog -->
+  <url>
+    <loc>https://YOUR-DOMAIN.com/blog/index.html</loc>
+    <priority>0.75</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/blog/how-to-resize-pan-photo.html</loc>
+    <priority>0.65</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/blog/pan-photo-requirements-2025.html</loc>
+    <priority>0.65</priority>
+  </url>
+
+  <url>
+    <loc>https://YOUR-DOMAIN.com/blog/why-pan-photos-get-rejected.html</loc>
+    <priority>0.65</priority>
+  </url>
+
+</urlset>

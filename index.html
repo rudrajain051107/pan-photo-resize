@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>PAN Photo Resize – Free, Secure, No Upload</title>
+
+<!-- SEO -->
+<meta name="description" content="Resize, crop and compress PAN card photos instantly. 100% secure, no upload — everything runs inside your browser.">
+<meta name="keywords" content="PAN photo resize, PAN card image size, resize PAN photo, compress PAN photo, PAN upload issue, PAN photo requirements, India PAN tool">
+<meta name="author" content="PAN Photo Resize">
+
+<!-- OpenGraph -->
+<meta property="og:title" content="PAN Photo Resize – Free Tool">
+<meta property="og:description" content="Resize, crop & compress PAN card photos securely.">
+<meta property="og:image" content="/assets/og-image.png">
+<meta property="og:url" content="https://YOUR-DOMAIN.com">
+<meta property="og:type" content="website">
+
+<!-- Favicons -->
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48x48.png">
+
+<!-- Apple Touch Icon -->
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+
+<!-- Manifest -->
+<link rel="manifest" href="assets/site.webmanifest">
+
+<!-- Open Graph -->
+<meta property="og:image" content="assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<style>
+    body{
+        margin:0;
+        font-family:Arial, sans-serif;
+        background:#f7f8fb;
+        color:#0b1320;
+        -webkit-font-smoothing: antialiased;
+    }
+    nav{
+        width:100%;
+        padding:14px 0;
+        background:#ffffff;
+        border-bottom:1px solid rgba(0,0,0,0.06);
+        display:flex;
+        justify-content:center;
+        gap:22px;
+        position:sticky;
+        top:0;
+        z-index:20;
+    }
+    nav a{
+        color:#0b1320;
+        text-decoration:none;
+        font-weight:600;
+    }
+    .container{
+        max-width:1100px;
+        margin:25px auto;
+        padding:14px;
+    }
+    .card{
+        background:#fff;
+        padding:20px;
+        border-radius:14px;
+        box-shadow:0 8px 24px rgba(0,0,0,0.06);
+        border:1px solid rgba(0,0,0,0.04);
+    }
+    .upload-box{
+        border:2px dashed rgba(0,0,0,0.1);
+        background:#fbfdff;
+        padding:22px;
+        border-radius:12px;
+        text-align:center;
+        cursor:pointer;
+    }
+    .btn{
+        background:#0ea5a4;
+        color:#fff;
+        border:none;
+        padding:10px 18px;
+        border-radius:8px;
+        cursor:pointer;
+        font-size:15px;
+        font-weight:600;
+    }
+    canvas{
+        width:100%;
+        height:auto;
+        background:#fff;
+        border-radius:10px;
+    }
+    footer{
+        text-align:center;
+        margin-top:40px;
+        padding:20px 10px;
+        font-size:14px;
+        color:#6b7280;
+    }
+
+    /* cookie banner */
+    #cookie-banner{
+        position:fixed;
+        bottom:20px;
+        left:50%;
+        transform:translateX(-50%);
+        background:#fff;
+        border:1px solid rgba(0,0,0,0.1);
+        border-radius:12px;
+        padding:14px 20px;
+        box-shadow:0 6px 20px rgba(0,0,0,0.08);
+        display:none;
+        z-index:9999;
+        max-width:90%;
+    }
+</style>
+
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <a href="/">Home</a>
+  <a href="about.html">About</a>
+  <a href="privacy.html">Privacy</a>
+  <a href="terms.html">Terms</a>
+  <a href="contact.html">Contact</a>
+</nav>
+
+<div class="container">
+    <div class="card">
+        <h2 style="margin-top:0;">PAN Photo Resize – Free & Secure</h2>
+        <p style="color:#6b7280;">Resize, compress & crop PAN card photos. No uploads — everything stays on your device.</p>
+
+        <!-- Upload box -->
+        <div class="upload-box" onclick="document.getElementById('file').click()">
+            <strong>Click to select or drag & drop</strong><br>
+            <small style="color:#6b7280;">JPG / PNG</small>
+            <input type="file" id="file" accept="image/*" style="display:none" onchange="loadFile(event)">
+        </div>
+
+        <div style="margin-top:20px;">
+            <canvas id="previewCanvas"></canvas>
+        </div>
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+            <button class="btn" onclick="processImage()">Resize & Compress</button>
+            <button class="btn" style="background:#06b6d4;" onclick="downloadImage()">Download Image</button>
+        </div>
+
+        <div style="margin-top:20px; color:#6b7280;">
+            <strong>Output Info:</strong><br>
+            <span id="info-size">Size: —</span><br>
+            <span id="info-dims">Dimensions: —</span><br>
+            <span id="info-quality">Quality: —</span><br>
+        </div>
+
+        <!-- FAQ -->
+        <h3 style="margin-top:30px;">FAQ</h3>
+        <p><strong>Are my images uploaded?</strong><br>No — processing happens in your browser only.</p>
+        <p><strong>Recommended PAN size?</strong><br>1020 × 648 px and under 200 KB.</p>
+    </div>
+</div>
+
+<footer>
+  © <script>document.write(new Date().getFullYear())</script> PAN Photo Resize • Files processed in your browser.  
+  <br>Contact: <a href="mailto:krish41825c@gmail.com">krish41825c@gmail.com</a>
+</footer>
+
+<!-- COOKIE BANNER -->
+<div id="cookie-banner">
+    This site uses cookies from Google to show ads. By using this site, you agree to our 
+    <a href="privacy.html" style="color:#0ea5a4;font-weight:600;">Privacy Policy</a>.
+    <button onclick="acceptCookies()" class="btn" style="padding:6px 12px; font-size:13px;">OK</button>
+</div>
+
+<script>
+function acceptCookies(){
+  localStorage.setItem('cookieAccepted','yes');
+  document.getElementById('cookie-banner').style.display='none';
+}
+if(!localStorage.getItem('cookieAccepted')){
+  window.onload = () => document.getElementById('cookie-banner').style.display='block';
+}
+
+let originalImg = null;
+let finalBlob = null;
+
+function loadFile(event){
+    const file = event.target.files[0];
+    if(!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+            originalImg = img;
+            drawPreview(img);
+        };
+        img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function drawPreview(img){
+    const canvas = document.getElementById('previewCanvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = 800;
+    canvas.height = 400;
+
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const x = (canvas.width - w) / 2;
+    const y = (canvas.height - h) / 2;
+
+    ctx.drawImage(img, x, y, w, h);
+}
+
+function processImage(){
+    if(!originalImg){ alert("Upload an image first."); return; }
+
+    const targetW = 1020;
+    const targetH = 648;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0,0,targetW,targetH);
+
+    const scale = Math.max(targetW / originalImg.width, targetH / originalImg.height);
+    const newW = originalImg.width * scale;
+    const newH = originalImg.height * scale;
+
+    const sx = (newW - targetW) / 2;
+    const sy = (newH - targetH) / 2;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = newW;
+    tempCanvas.height = newH;
+    tempCanvas.getContext('2d').drawImage(originalImg, 0, 0, newW, newH);
+
+    ctx.drawImage(tempCanvas, sx, sy, targetW, targetH, 0,0,targetW,targetH);
+
+    canvas.toBlob((blob)=>{
+        finalBlob = blob;
+
+        document.getElementById("info-size").textContent = "Size: " + (blob.size/1024).toFixed(1) + " KB";
+        document.getElementById("info-dims").textContent = "Dimensions: 1020 × 648";
+        document.getElementById("info-quality").textContent = "Quality: 90%";
+
+        const preview = document.getElementById('previewCanvas').getContext('2d');
+        drawPreview(originalImg);
+    }, "image/jpeg", 0.9);
+}
+
+function downloadImage(){
+    if(!finalBlob){ 
+        alert("Process the image first."); 
+        return;
+    }
+
+    const url = URL.createObjectURL(finalBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "PAN-photo.jpg";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+
+</body>
+</html>

@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<title>PAN Photo Resize Tool — Resize PAN card photo to government specs | Free & Secure</title>
+<meta name="description" content="Instantly resize PAN card photos to official dimensions and size (JPG, 50KB). 100% client-side, private, no uploads.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta property="og:title" content="PAN Photo Resize Tool — Free & Secure">
+<meta property="og:description" content="Resize PAN card photos to government specs quickly. Works offline — no upload.">
+<meta property="og:image" content="https://yourdomain.com/assets/preview.png">
+<meta name="twitter:card" content="summary_large_image">
 <meta charset="UTF-8">
 <title>Privacy Policy – PAN Photo Resize</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -30,6 +37,11 @@ footer{text-align:center;margin-top:40px;padding:20px;color:#6b7280;font-size:14
 </style>
 </head>
 <body>
+<!-- Accessible error/progress -->
+<div id="user-feedback" style="padding:8px 12px;max-width:700px;margin:0 auto;">
+  <div id="error-message" role="alert" aria-live="polite" style="display:none;color:red;margin-bottom:8px"></div>
+  <div id="progress" aria-hidden="true" style="display:none;margin-bottom:8px">Processing…</div>
+</div>
 
 <nav>
   <a href="index.html">Home</a>
@@ -57,12 +69,27 @@ All photo processing is done directly inside your browser.</p>
 <p>This website is not intended for children under 13.</p>
 
 <h3>Contact</h3>
-<p>Email: <a href="mailto:krish41825c@gmail.com">krish41825c@gmail.com</a></p>
+<p>Email: <a href="mailto:jainstools051107@gmail.com">jainstools051107@gmail.com</a></p>
 </div>
 
 <footer>
 © <script>document.write(new Date().getFullYear())</script> PAN Photo Resize  
 </footer>
 
+  <script src="/assets/js/validation.js" defer></script>
+<section><h2>Cookies & Client-Side</h2><p>All processing is local in your browser. Ads may use cookies.</p></section>
+<!-- Cookie Consent -->
+<div id="cookie-consent" style="position:fixed;bottom:10px;left:10px;right:10px;background:#fff;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:9999;">
+  This site uses cookies for ads. <button id="accept-cookie">OK</button>
+</div>
+<script>
+if(!localStorage.getItem('cookies_accepted')){
+  document.getElementById('cookie-consent').style.display='block';
+}
+document.getElementById('accept-cookie').onclick=function(){
+  localStorage.setItem('cookies_accepted','1');
+  document.getElementById('cookie-consent').style.display='none';
+}
+</script>
 </body>
 </html>

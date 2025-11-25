@@ -1,0 +1,11 @@
+# Node / build / editor
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.env
+*.pem
+.vscode/
+.idea/
+*.bak

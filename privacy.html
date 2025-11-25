@@ -37,6 +37,38 @@ footer{text-align:center;margin-top:40px;padding:20px;color:#6b7280;font-size:14
 </style>
 </head>
 <body>
+<!-- BEGIN: PAN Resize UI additions -->
+<div id="user-feedback" aria-live="polite" style="max-width:900px;margin:12px auto;">
+  <div id="error-message" role="alert" style="display:none;color:#b00020;margin-bottom:8px"></div>
+  <div id="progress" style="display:none;margin-bottom:8px">Processing…</div>
+</div>
+
+<div style="max-width:900px;margin:12px auto;padding:12px;border-radius:8px;">
+  <label for="upload-input">Upload PAN photo (JPG/PNG):</label>
+  <input id="upload-input" type="file" accept="image/jpeg,image/png" aria-describedby="uploadHelp" />
+  <small id="uploadHelp">Allowed: JPG/PNG. Max upload: 5MB. Output presets: NSDL (276x394 ≤50KB), UTI (213x213 ≤30KB)</small>
+  <div style="margin-top:8px;">
+    <label for="preset-select">Choose preset:</label>
+    <select id="preset-select">
+      <option value="nsdl">NSDL — 276×394 (≤50KB)</option>
+      <option value="uti">UTI — 213×213 (≤30KB)</option>
+      <option value="custom">Custom (use UI)</option>
+    </select>
+  </div>
+
+  <div style="display:flex;gap:16px;margin-top:12px;align-items:center;">
+    <div>
+      <h4>Original</h4>
+      <img id="orig-preview" alt="Original preview" style="max-width:300px;display:block;background:#f4f4f4" />
+    </div>
+    <div>
+      <h4>Result</h4>
+      <img id="res-preview" alt="Resized preview" style="max-width:300px;display:block;background:#f4f4f4" />
+      <a id="download-btn" href="#" class="btn" style="display:inline-block;margin-top:6px;padding:8px 12px;background:#0ea5a4;color:#fff;border-radius:6px">Download</a>
+    </div>
+  </div>
+</div>
+<!-- END: PAN Resize UI additions -->
 <!-- Accessible error/progress -->
 <div id="user-feedback" style="padding:8px 12px;max-width:700px;margin:0 auto;">
   <div id="error-message" role="alert" aria-live="polite" style="display:none;color:red;margin-bottom:8px"></div>
@@ -91,5 +123,7 @@ document.getElementById('accept-cookie').onclick=function(){
   document.getElementById('cookie-consent').style.display='none';
 }
 </script>
+  <script src="/assets/js/validation-and-resize.js" defer></script>
+<section><h2>Client-side Processing & Cookies</h2><p>All image processing on this site is performed locally in your browser. Images are not uploaded to our servers unless you explicitly submit them. We may use cookies and third-party services (e.g., Google/AdSense) for analytics and ads only with your consent.</p></section>
 </body>
 </html>

@@ -1,11 +1,14 @@
+# PAN Photo Resize
+
+Free client-side tool to resize PAN card photos to official specs (NSDL/UTI). No uploads — processing occurs in your browser.
+
+Contact: jainstools051107@gmail.com
 PAN Photo Resize — Official NSDL/UTI PAN Card Photo Resizer  
 Free, secure, client-side tool to resize PAN card photos to official government specifications.
 
 All image processing happens locally in your browser — nothing is uploaded anywhere.
 
-===============================================================
 🔥 FEATURES
-===============================================================
 
 OFFICIAL PAN PRESETS (2025 Updated)
 - NSDL: 276 × 394 px (≤ 50 KB)
@@ -39,9 +42,7 @@ SEO + METADATA
 - robots.txt and sitemap.xml
 - vercel.json security headers
 
-===============================================================
 📁 PROJECT STRUCTURE
-===============================================================
 
 pan-photo-resize/
 │
@@ -70,9 +71,7 @@ pan-photo-resize/
 ├── CONTRIBUTING.md
 └── .gitignore
 
-===============================================================
 🧠 HOW IT WORKS
-===============================================================
 
 - HTML5 Canvas handles all resizing + compression
 - Reads the uploaded file and validates:
@@ -87,9 +86,7 @@ pan-photo-resize/
 - Outputs downloadable blob URL
 - 100% browser-side = full privacy
 
-===============================================================
 📦 DEVELOPER SETUP
-===============================================================
 
 To clone the project:
 git clone https://github.com/rudrajain051107/pan-photo-resize
@@ -100,15 +97,11 @@ cd pan-photo-resize
 To test locally:
 Open index.html in any browser.
 
-===============================================================
 🌐 LIVE TOOL
-===============================================================
 
 https://pan-photo-resize.vercel.app
 
-===============================================================
 🤝 CONTRIBUTING
-===============================================================
 
 1. Fork the repository
 2. Create a new branch:
@@ -120,22 +113,16 @@ https://pan-photo-resize.vercel.app
    git push origin feature-name
 6. Open a Pull Request on GitHub
 
-===============================================================
 📜 LICENSE
-===============================================================
 
 MIT License.
 
-===============================================================
 📬 CONTACT
-===============================================================
 
 For suggestions or help:
 Email: jainstools051107@gmail.com
 
-===============================================================
 ⭐ SUPPORT THIS PROJECT
-===============================================================
 
 If this tool helped you, please star the repository on GitHub.
 It motivates further development ❤️

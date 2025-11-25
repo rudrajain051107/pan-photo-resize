@@ -76,7 +76,7 @@ This is a fully static project — no build system is required.
 
 For help, feedback or bug reports, email:
 
-    krish41825c@gmail.com
+    jainstools051107@gmail.com
 
 ---
 

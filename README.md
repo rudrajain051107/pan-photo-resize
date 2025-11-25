@@ -1,87 +1,141 @@
-# PAN Photo Resize – Free, Secure, No-Upload Image Tool
+PAN Photo Resize — Official NSDL/UTI PAN Card Photo Resizer  
+Free, secure, client-side tool to resize PAN card photos to official government specifications.
 
-PAN Photo Resize is a fast, simple, and secure online tool for resizing, cropping, and compressing PAN card photos to official specifications. All processing happens directly inside your browser using JavaScript — your images are never uploaded to any server.
+All image processing happens locally in your browser — nothing is uploaded anywhere.
 
-This repository contains the full static website, ready for deployment on Vercel, Netlify, or GitHub Pages.
+===============================================================
+🔥 FEATURES
+===============================================================
 
----
+OFFICIAL PAN PRESETS (2025 Updated)
+- NSDL: 276 × 394 px (≤ 50 KB)
+- UTI: 213 × 213 px (≤ 30 KB)
+- Custom mode supported
 
-## 🔒 Privacy First
+SECURITY
+- 100% client-side
+- No uploads
+- No tracking
+- Full privacy
 
-- No uploads  
-- No image storage  
-- No tracking  
-- Fully client-side (HTML5 Canvas API)  
+PROCESSING ENGINE
+- Validates JPG/PNG + detects corruption
+- Max upload size: 5MB
+- Center-crop (passport style)
+- Iterative compression until file meets KB limit
+- Before/After preview
+- One-click download
 
-Your photos remain completely safe on your device.
-
----
-
-## 🚀 Features
-
-- Resize PAN photos to **1020 × 648 px**
-- Auto-center crop
-- JPEG compression (~90%)
-- Output around recommended PAN upload limits (under ~200 KB)
-- Drag & drop upload
-- Clean, modern UI
-- Mobile friendly
+UI/UX
+- Realtime validation and errors
+- Processing indicator
+- Mobile-friendly UI
 - Cookie consent banner
-- SEO-ready pages
-- AdSense-ready structure
-- Fully static (no backend)
+- ARIA accessibility
 
----
+SEO + METADATA
+- Open Graph preview
+- JSON-LD schema
+- robots.txt and sitemap.xml
+- vercel.json security headers
 
-## 📁 File Structure
+===============================================================
+📁 PROJECT STRUCTURE
+===============================================================
 
-The project is organized as follows:
+pan-photo-resize/
+│
+├── index.html — main UI
+├── about.html
+├── contact.html
+├── privacy.html
+├── terms.html
+├── report.html
+├── 404.html
+│
+├── assets/
+│   ├── preview.png
+│   └── js/
+│       └── validation-and-resize.js
+│
+├── blog/
+│
+├── vercel.json
+├── robots.txt
+├── sitemap.xml
+│
+├── LICENSE
+├── README.md
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── .gitignore
 
-    root/
-    │
-    ├── index.html
-    ├── about.html
-    ├── privacy.html
-    ├── terms.html
-    ├── contact.html
-    ├── report.html
-    ├── 404.html
-    │
-    ├── blog/
-    │   ├── index.html
-    │   ├── how-to-resize-pan-photo.html
-    │   ├── pan-photo-requirements-2025.html
-    │   └── why-pan-photos-get-rejected.html
-    │
-    ├── assets/
-    │   ├── logo.png
-    │   ├── logo-square.png
-    │   ├── og-image.png
-    │   ├── favicon-16x16.png
-    │   ├── favicon-32x32.png
-    │   ├── favicon-48x48.png
-    │   ├── apple-touch-icon.png
-    │   └── site.webmanifest
-    │
-    ├── sitemap.xml
-    ├── robots.txt
-    └── README.md
+===============================================================
+🧠 HOW IT WORKS
+===============================================================
 
-This is a fully static project — no build system is required.
+- HTML5 Canvas handles all resizing + compression
+- Reads the uploaded file and validates:
+  - Type (JPG/PNG)
+  - Size (<5MB)
+  - Corruption
+- Auto applies NSDL/UTI preset or custom
+- Crops using aspect ratio detection
+- Compresses iteratively until:
+  - NSDL = ≤ 50 KB
+  - UTI = ≤ 30 KB
+- Outputs downloadable blob URL
+- 100% browser-side = full privacy
 
----
+===============================================================
+📦 DEVELOPER SETUP
+===============================================================
 
+To clone the project:
+git clone https://github.com/rudrajain051107/pan-photo-resize
 
-## 📧 Contact
+Then enter the folder:
+cd pan-photo-resize
 
-For help, feedback or bug reports, email:
+To test locally:
+Open index.html in any browser.
 
-    jainstools051107@gmail.com
+===============================================================
+🌐 LIVE TOOL
+===============================================================
 
----
+https://pan-photo-resize.vercel.app
 
-## 📄 License
+===============================================================
+🤝 CONTRIBUTING
+===============================================================
 
-This project is free to use, modify, and deploy for both personal and commercial use.
+1. Fork the repository
+2. Create a new branch:
+   git checkout -b feature-name
+3. Make your changes
+4. Commit your changes:
+   git commit -m "feat: description of change"
+5. Push the branch:
+   git push origin feature-name
+6. Open a Pull Request on GitHub
 
----
+===============================================================
+📜 LICENSE
+===============================================================
+
+MIT License.
+
+===============================================================
+📬 CONTACT
+===============================================================
+
+For suggestions or help:
+Email: jainstools051107@gmail.com
+
+===============================================================
+⭐ SUPPORT THIS PROJECT
+===============================================================
+
+If this tool helped you, please star the repository on GitHub.
+It motivates further development ❤️

@@ -38,6 +38,11 @@ footer{text-align:center;margin-top:40px;padding:20px;color:#6b7280;font-size:14
 </style>
 </head>
 <body>
+<!-- Accessible error/progress -->
+<div id="user-feedback" style="padding:8px 12px;max-width:700px;margin:0 auto;">
+  <div id="error-message" role="alert" aria-live="polite" style="display:none;color:red;margin-bottom:8px"></div>
+  <div id="progress" aria-hidden="true" style="display:none;margin-bottom:8px">Processing…</div>
+</div>
 
 <nav>
   <a href="index.html">Home</a>

@@ -77,6 +77,9 @@ fileInput.addEventListener('change', e=>{
 
   // load first file preview
 // ==== JPEG auto-repair patch =====
+
+console.log("Attempting JPEG repair...");
+
 try {
     const safeBlob = await cleanImageBlob(files[0]);
     currentFile = new File([safeBlob], files[0].name, { type: "image/jpeg" });
@@ -86,6 +89,9 @@ try {
     statusEl.textContent = "Image corrupted or unsupported";
     return;
 }
+
+console.log("Passing repaired file to loadAndPreviewFile...");
+
 // =================================
 loadAndPreviewFile(currentFile);
 });

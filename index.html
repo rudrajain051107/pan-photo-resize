@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <!-- Google Analytics (GA4) -->
-  <!-- START: GOOGLE ANALYTICS -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-32PVT9MGN9"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -11,7 +10,6 @@
     gtag('js', new Date());
     gtag('config', 'G-32PVT9MGN9');
   </script>
-  <!-- END: GOOGLE ANALYTICS -->
 
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PAN Photo Resizer by Jain'sTools</title>
@@ -22,21 +20,14 @@
   <meta property="og:image" content="assets/images/og-image.svg" />
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="icon" href="assets/images/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/images/favicons/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/images/favicons/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/images/favicons/apple-touch-icon.png">
+  <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="assets/css/style.css" />
-  <!-- ADSENSE PLACEHOLDER START - replace with your code -->
-  <!-- <script data-ad-client="ca-pub-XXXXXXXXXX" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script> -->
-  <!-- ADSENSE PLACEHOLDER END -->
-<!-- AUTO-GENERATED FAVICONS -->
-<link rel="icon" type="image/png" sizes="32x32" href="assets/images/favicons/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="assets/images/favicons/favicon-16x16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="assets/images/favicons/apple-touch-icon.png">
-<link rel="icon" href="/favicon.ico">
-
 </head>
 <body>
   <header class="site-header">
-    <!-- LOGO PLACEHOLDER: Replace assets/images/logo.svg with your logo file -->
     <div class="brand">
       <img src="assets/images/logo.svg" alt="PAN Photo Resizer by Jain'sTools logo" id="brand-logo"/>
       <div class="brand-text">
@@ -50,16 +41,21 @@
     <section class="upload-section" aria-labelledby="upload-heading">
       <h1 id="upload-heading" class="sr-only">Upload PAN Photo</h1>
 
-      <!-- UPLOAD BLOCK -->
-      <label id="drop-zone" class="drop-zone" for="file-input" tabindex="0" aria-describedby="upload-hint" role="button">
-        <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" />
-        <div class="drop-content">
-          <img src="assets/images/upload-illustration.svg" alt="" aria-hidden="true" class="drop-ill"/>
-          <p id="upload-hint"><strong>Drop image here</strong> or click to upload — JPG, PNG, WebP (max 10 MB)</p>
-          <p class="muted">Quick presets for NSDL & UTI included</p>
+      <!-- MAIN UPLOAD (single or batch) -->
+      <div class="upload-controls">
+        <label id="drop-zone" class="drop-zone" for="file-input" tabindex="0" role="button">
+          <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple />
+          <div class="drop-content">
+            <img src="assets/images/upload-illustration.svg" alt="" aria-hidden="true" class="drop-ill"/>
+            <p id="upload-hint"><strong>Drop images here</strong> or click to upload — JPG, PNG, WebP (max 10 MB each)</p>
+            <p class="muted">Use presets or custom size. Batch supported.</p>
+          </div>
+        </label>
+        <div class="batch-actions">
+          <button id="download-zip" class="secondary" disabled>Download ZIP (batch)</button>
+          <button id="clear-batch" class="secondary" disabled>Clear</button>
         </div>
-      </label>
-      <!-- /UPLOAD BLOCK -->
+      </div>
 
       <div class="controls" id="controls">
         <div class="preset-row">
@@ -76,21 +72,16 @@
         </div>
 
         <div class="edit-row">
-          <button id="rotate-left" title="Rotate left">⟲</button>
-          <button id="rotate-right" title="Rotate right">⟳</button>
-          <button id="flip-horizontal" title="Flip horizontal">⇋</button>
-          <button id="flip-vertical" title="Flip vertical">⇅</button>
-          <label class="small"> <input type="checkbox" id="lock-aspect" checked/> Lock aspect</label>
+          <button id="crop-btn" title="Crop">Crop</button>
+          <button id="undo-btn" title="Undo" disabled>Undo</button>
+          <button id="redo-btn" title="Redo" disabled>Redo</button>
+          <button id="process-btn" class="primary" disabled>Process & Download</button>
+          <button id="reset-btn">Reset</button>
         </div>
 
         <div class="zoom-row">
           <label for="zoom-slider">Zoom</label>
           <input id="zoom-slider" type="range" min="1" max="3" step="0.1" value="1" />
-        </div>
-
-        <div class="process-row">
-          <button id="process-btn" class="primary" disabled>Process & Download</button>
-          <button id="reset-btn">Reset</button>
         </div>
       </div>
 
@@ -106,16 +97,15 @@
       </div>
 
       <div id="status" class="status" role="status" aria-live="polite">No image selected.</div>
-      <div class="ads-placeholder" aria-hidden="true"></div>
     </section>
 
     <section class="info">
       <h2>How it works</h2>
       <ol>
-        <li>Upload a clear PAN photo (JPG/PNG/WebP).</li>
+        <li>Upload clear PAN photos (JPG/PNG/WebP) — multiple allowed.</li>
         <li>Choose preset: NSDL or UTI, or custom size.</li>
-        <li>Use rotate, flip, zoom if needed.</li>
-        <li>Click <strong>Process & Download</strong> to get the resized image.</li>
+        <li>Use crop, rotate, flip, zoom. Undo/Redo supported.</li>
+        <li>Click <strong>Process & Download</strong> for single or use <strong>Download ZIP</strong> for batch.</li>
       </ol>
     </section>
   </main>
@@ -125,6 +115,19 @@
     <div><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></div>
   </footer>
 
-  <script type="module" src="assets/js/app.js"></script>
+  <!-- Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- App scripts -->
+<script type="module" src="assets/js/cropper.js"></script>
+
+<script type="module" src="assets/js/validator.js"></script>
+
+<script type="module" src="assets/js/imageProcessor.js"></script>
+
+<script type="module" src="assets/js/worker-advanced.js"></script>
+
+
+  <script type="module" src="assets/js/app-phase3.js"></script>
 </body>
 </html>

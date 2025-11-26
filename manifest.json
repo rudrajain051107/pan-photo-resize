@@ -1,0 +1,9 @@
+{
+  "short_name":"PANResizer",
+  "name":"PAN Photo Resizer by Jain'sTools",
+  "icons":[ {"src":"assets/images/logo.svg","sizes":"192x192","type":"image/svg+xml"} ],
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#ffffff",
+  "theme_color":"#06b6d4"
+}

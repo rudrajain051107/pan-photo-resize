@@ -1,0 +1,42 @@
+<!-- DEBUG LOGGER ADDED -->
+<div id="debug-log" style="position:relative;z-index:9999;background:#fff8;padding:8px;border:1px solid #eee;max-height:240px;overflow:auto;font-family:monospace;font-size:12px;margin:12px 0;">
+  DEBUG LOG:
+</div>
+
+<script>
+(function(){
+  function log(msg){
+    const el = document.getElementById('debug-log');
+    if(!el) return console.log(msg);
+    const p = document.createElement('div');
+    p.textContent = new Date().toLocaleTimeString() + " — " + msg;
+    el.appendChild(p);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const input = document.getElementById('file-input');
+    const status = document.getElementById('status');
+
+    if(!input){ log("file-input NOT FOUND"); return; }
+    log("file-input FOUND");
+
+    input.addEventListener('change', ()=>{
+      const f = input.files?.[0];
+      if(!f){ log("No file selected"); return; }
+
+      log("Selected: "+f.name+" | "+f.type+" | "+Math.round(f.size/1024)+" KB");
+
+      const img = new Image();
+      img.onload = ()=>{
+        log("Image onload OK: "+img.naturalWidth+"x"+img.naturalHeight);
+      };
+      img.onerror = ()=>{
+        log("Image onerror - cannot decode");
+      };
+      img.src = URL.createObjectURL(f);
+      log("Blob URL set");
+    });
+  });
+})();
+</script>

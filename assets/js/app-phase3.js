@@ -2,6 +2,7 @@
 import Cropper from './cropper.js';
 import { validateFile } from './validator.js';
 import { processFile } from './imageProcessor.js';
+import { cleanImageBlob } from './fixImage.js';
 
 const fileInput = document.getElementById('file-input');
 const dropZone = document.getElementById('drop-zone');
@@ -73,9 +74,20 @@ fileInput.addEventListener('change', e=>{
   files = list.filter(f=> validateFile(f).valid);
   if(files.length === 0){ setStatus('No valid images in selection', true); return; }
   downloadZipBtn.disabled = false; clearBatchBtn.disabled = false;
+
   // load first file preview
-  currentIndex = 0; currentFile = files[0];
-  loadAndPreviewFile(currentFile);
+// ==== JPEG auto-repair patch =====
+try {
+    const safeBlob = await cleanImageBlob(files[0]);
+    currentFile = new File([safeBlob], files[0].name, { type: "image/jpeg" });
+    console.log("JPEG repaired successfully");
+} catch (err) {
+    console.error("JPEG repair failed:", err);
+    statusEl.textContent = "Image corrupted or unsupported";
+    return;
+}
+// =================================
+loadAndPreviewFile(currentFile);
 });
 
 dropZone.addEventListener('dragover', e=>{ e.preventDefault(); dropZone.classList.add('dragover'); });

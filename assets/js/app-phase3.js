@@ -36,34 +36,21 @@ function setStatus(txt, err=false){
 }
 
 function drawImageToCanvas(img, canvas){
+    const ctx = canvas.getContext('2d');
+
+    // FIX: Ensure canvas has real size (Android bug)
+    const w = img.naturalWidth || 10;
+    const h = img.naturalHeight || 10;
+
+    canvas.width = w;
+    canvas.height = h;
+
+    console.log(`Drawing image at ${w}x${h}`);
+
     try {
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-        // Fix Android Chrome decode bug
-        const w = img.naturalWidth;
-        const h = img.naturalHeight;
-
-        if (!w || !h) {
-            console.log("⚠️ decode failed inside drawImageToCanvas");
-            throw new Error("naturalWidth missing");
-        }
-
-        // Resize canvas safely
-        canvas.width = w;
-        canvas.height = h;
-
-        // Actually draw
         ctx.drawImage(img, 0, 0, w, h);
-
-        console.log("✔ drawImageToCanvas OK");
-    }
-    catch (err){
-        console.log("❌ drawImage error:", err);
-        const debug = document.getElementById("debug-log");
-        if(debug){
-            debug.innerHTML += "<div>drawImage FAILED - " + err + "</div>";
-        }
-        throw err;
+    } catch(err){
+        console.error("drawImage failed", err);
     }
 }
 

@@ -31,3 +31,12 @@
   border: 1px solid #ddd;
   display: block;
 }
+
+#before-canvas,
+#after-canvas {
+    display: block;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 200px !important;
+    background: #f1f1f1;
+}

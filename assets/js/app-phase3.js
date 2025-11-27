@@ -6,6 +6,44 @@ import { validateFile } from './validator.js';
 import { processFile } from './imageProcessor.js';
 import { cleanImageBlob } from './fixImage.js';
 
+/* HARDCORE DEBUG LOGGER */
+function deepDebugImage(url){
+    return new Promise(res=>{
+        try {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+
+            img.onload = ()=>{ 
+                console.log("HARDCORE: onload OK -", img.naturalWidth, img.naturalHeight);
+                res({ok:true});
+            };
+
+            img.onerror = (e)=>{
+                console.log("HARDCORE: onerror triggered", e);
+                console.log("HARDCORE: URL =", url);
+
+                // Try decoding via fetch + blob + bitmap
+                fetch(url).then(r=>r.blob()).then(b=>{
+                    console.log("HARDCORE: Blob fetched:", b.type, b.size);
+
+                    return createImageBitmap(b);
+                }).then(bmp=>{
+                    console.log("HARDCORE: createImageBitmap SUCCESS: ", bmp.width, bmp.height);
+                    res({ok:true});
+                }).catch(err=>{
+                    console.log("HARDCORE: createImageBitmap FAILED:", err);
+                    res({ok:false,err});
+                });
+            };
+
+            img.src = url;
+        } catch(err){
+            console.log("HARDCORE: Unexpected exception:", err);
+            res({ok:false, err});
+        }
+    });
+}
+
 /* ELEMENTS */
 const fileInput = document.getElementById('file-input');
 const dropZone = document.getElementById('drop-zone');
@@ -54,31 +92,230 @@ function drawImageToCanvas(img, canvas){
     }
 }
 
-function loadAndPreviewFile(file){
-    const url = URL.createObjectURL(file);
-    const img = new Image();
+// Robust loader: try multiple decode strategies until one works
+async function loadAndPreviewFile(file){
+  const debug = msg => {
+    const el = document.getElementById('debug-log');
+    if(el) el.appendChild(Object.assign(document.createElement('div'), { textContent: (new Date()).toLocaleTimeString() + ' - ' + msg }));
+    console.log(msg);
+  };
 
-    img.onload = ()=>{
-        editingImage = img;
-        drawImageToCanvas(img, beforeCanvas);
-        setStatus("Loaded " + file.name);
+  setStatus('Loading preview...');
+  debug('loadAndPreviewFile: start');
 
-        if(cropper){
-            cropper.start({
-                x:20, y:20,
-                w:Math.min(200, beforeCanvas.width-40),
-                h:Math.min(200, beforeCanvas.height-40)
-            });
+  // helper: draw Image or ImageBitmap into canvas safely
+  const drawToCanvas = (imgLike, canvas) => {
+    try {
+      const ctx = canvas.getContext('2d');
+      const w = (imgLike.naturalWidth || imgLike.width || canvas.width || 200);
+      const h = (imgLike.naturalHeight || imgLike.height || Math.max(200, Math.round(w * 0.75)));
+
+      canvas.width = w;
+      canvas.height = h;
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(imgLike, 0, 0, w, h);
+      debug(`drawToCanvas OK ${w}x${h}`);
+      return true;
+    } catch (err) {
+      debug('drawToCanvas failed: ' + err);
+      console.error(err);
+      return false;
+    }
+  };
+
+
+
+// Strategy A: normal Image using blob URL (ANDROID SAFE)
+const tryWithImageURL = (blob) => new Promise((resolve, reject) => {
+    try {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+
+        img.crossOrigin = "anonymous";
+
+        img.onload = () => {
+            console.log("Strategy A: Image() loaded:", img.naturalWidth, img.naturalHeight);
+            resolve(img);
+        };
+
+        img.onerror = async () => {
+            console.warn("Strategy A failed — trying forced decode...");
+
+            try {
+                const fixed = await forceDecode(blob);
+                console.log("Force decode successful:", fixed);
+                resolve(fixed);
+            } catch (err) {
+                reject("Strategy A + force decode failed: " + err);
+            }
+        };
+
+        img.src = url;
+    } catch (err) {
+        reject(err);
+    }
+});
+
+// HARDCORE fallback: draw via createImageBitmap → Image → canvas
+async function forceDecode(blob){
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0);
+    const fixedBlob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.95));
+    return await createImageBitmap(fixedBlob);
+}
+
+  // Strategy B: FileReader -> dataURL
+  const tryWithDataURL = (blob) => new Promise((resolve, reject) => {
+    try {
+      const fr = new FileReader();
+      fr.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          debug('Strategy B: dataURL loaded');
+          resolve({ type: 'image', img });
+        };
+        img.onerror = () => {
+          debug('Strategy B: dataURL image error');
+          reject(new Error('dataURL decode failed'));
+        };
+        img.src = fr.result;
+      };
+      fr.onerror = (e) => { debug('Strategy B: FileReader error'); reject(e); };
+      fr.readAsDataURL(blob);
+    } catch (e) { reject(e); }
+  });
+
+  // Strategy C: createImageBitmap
+  const tryWithImageBitmap = async (blob) => {
+    try {
+      if (!('createImageBitmap' in window)) throw new Error('createImageBitmap not available');
+      const bmp = await createImageBitmap(blob);
+      debug('Strategy C: createImageBitmap OK');
+      return { type: 'bitmap', bmp };
+    } catch (e) {
+      debug('Strategy C: createImageBitmap failed: ' + e);
+      throw e;
+    }
+  };
+
+  // Strategy D: Fetch + rebuild Blob (force rebuild from bytes)
+  const rebuildBlobFromArrayBuffer = async (origFile) => {
+    try {
+      const arrayBuffer = await origFile.arrayBuffer();
+      const ba = new Uint8Array(arrayBuffer);
+      const rebuilt = new Blob([ba], { type: origFile.type || 'application/octet-stream' });
+      debug('Strategy D: rebuilt Blob from ArrayBuffer');
+      return rebuilt;
+    } catch (e) {
+      debug('Strategy D: rebuild failed: ' + e);
+      throw e;
+    }
+  };
+
+  // Try sequence: A -> B -> C -> rebuild -> A/B/C
+  try {
+    // quick guard
+    if(!file || file.size === 0) {
+      setStatus('No file or zero-size', true);
+      debug('Early exit: zero-size file');
+      return;
+    }
+
+    debug(`File: ${file.name} | ${file.type} | ${Math.round(file.size/1024)} KB`);
+
+    // 1: Strategy A
+    try {
+      const r = await tryWithImageURL(file);
+      if (drawToCanvas(r.img, beforeCanvas)) {
+        editingImage = r.img;
+        setStatus(`Loaded ${file.name}`);
+        return;
+      }
+    } catch (e) {
+      debug('Strategy A failed, will fallback');
+    }
+
+    // 2: Strategy B (FileReader)
+    try {
+      const r = await tryWithDataURL(file);
+      if (drawToCanvas(r.img, beforeCanvas)) {
+        editingImage = r.img;
+        setStatus(`Loaded ${file.name} (dataURL)`);
+        return;
+      }
+    } catch (e) {
+      debug('Strategy B failed, will fallback');
+    }
+
+    // 3: Strategy C (ImageBitmap)
+    try {
+      const r = await tryWithImageBitmap(file);
+      // draw ImageBitmap
+      const ctx = beforeCanvas.getContext('2d');
+      beforeCanvas.width = r.bmp.width || Math.max(200, r.bmp.width);
+      beforeCanvas.height = r.bmp.height || Math.max(200, r.bmp.height || 200);
+      ctx.drawImage(r.bmp, 0, 0, beforeCanvas.width, beforeCanvas.height);
+      debug('Drew ImageBitmap to canvas');
+      editingImage = null; // bitmap used
+      setStatus(`Loaded ${file.name} (bitmap)`);
+      return;
+    } catch (e) {
+      debug('Strategy C failed, will attempt rebuild');
+    }
+
+    // 4: Rebuild blob from arrayBuffer then retry A/B/C
+    try {
+      const rebuilt = await rebuildBlobFromArrayBuffer(file);
+
+      // try A on rebuilt
+      try {
+        const r = await tryWithImageURL(rebuilt);
+        if (drawToCanvas(r.img, beforeCanvas)) {
+          editingImage = r.img;
+          setStatus(`Loaded ${file.name} (rebuilt)`);
+          return;
         }
+      } catch (e) { debug('Rebuilt A failed'); }
 
-        URL.revokeObjectURL(url);
-    };
+      // try B on rebuilt
+      try {
+        const r = await tryWithDataURL(rebuilt);
+        if (drawToCanvas(r.img, beforeCanvas)) {
+          editingImage = r.img;
+          setStatus(`Loaded ${file.name} (rebuilt dataURL)`);
+          return;
+        }
+      } catch (e) { debug('Rebuilt B failed'); }
 
-    img.onerror =()=>{
-        setStatus("Failed to load image", true);
-    };
+      // try C on rebuilt
+      try {
+        const r = await tryWithImageBitmap(rebuilt);
+        const ctx = beforeCanvas.getContext('2d');
+        beforeCanvas.width = r.bmp.width || 200;
+        beforeCanvas.height = r.bmp.height || 200;
+        ctx.drawImage(r.bmp, 0, 0, beforeCanvas.width, beforeCanvas.height);
+        debug('Drew rebuilt ImageBitmap to canvas');
+        editingImage = null;
+        setStatus(`Loaded ${file.name} (rebuilt bitmap)`);
+        return;
+      } catch (e) { debug('Rebuilt C failed'); }
 
-    img.src = url;
+    } catch (e) {
+      debug('Rebuild failed: ' + e);
+    }
+
+    // If all attempts fail:
+    setStatus('Failed to load image', true);
+    debug('ALL decoding strategies failed');
+  } catch (err) {
+    console.error('loadAndPreviewFile caught', err);
+    setStatus('Failed to load image', true);
+    debug('loadAndPreviewFile fatal: ' + err);
+  }
 }
 
 /* ============================================================

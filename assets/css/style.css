@@ -32,11 +32,14 @@
   display: block;
 }
 
+/* --- FIX PREVIEW CANVAS VISIBILITY (FINAL) --- */
 #before-canvas,
 #after-canvas {
     display: block;
     width: 100% !important;
     height: auto !important;
-    min-height: 200px !important;
-    background: #f1f1f1;
+    min-height: 240px !important;
+    background: #f6f6f6 !important;
+    border: 1px solid #ddd !important;
+    border-radius: 12px !important;
 }

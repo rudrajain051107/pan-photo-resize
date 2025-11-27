@@ -94,39 +94,58 @@ function loadAndPreviewFile(file){
     img.src = url;
 }
 
-/* FILE INPUT HANDLER — FIXED WITH JPEG REPAIR */
-fileInput.addEventListener('change', async e=>{
-    const list = Array.from(e.target.files || []);
-    if(list.length === 0) return;
+/* ============================================================
+   FILE INPUT HANDLER — Android Safe + JPEG Repair
+   ============================================================ */
 
-    // Filter valid files
-    files = list.filter(f => validateFile(f).valid);
-    if(files.length === 0){
-        setStatus("No valid images in selection", true);
+fileInput.addEventListener('change', async (e)=>{
+    console.log("🔥 file-input triggered");
+
+    const f = e.target.files?.[0];
+
+    if(!f){
+        console.log("❌ No file selected");
+        setStatus("No file selected", true);
         return;
     }
 
-    downloadZipBtn.disabled = false;
-    clearBatchBtn.disabled = false;
+    // BLOCK ANDROID'S 0-BYTE BUG
+    if(f.size < 100){
+        console.log("❌ File too small — corrupted event");
+        setStatus("Corrupted input — select again", true);
+        return;
+    }
 
-    console.log("Attempting JPEG repair...");
+    console.log(`🔥 REAL FILE DETECTED: ${f.name} | ${f.type} | ${f.size} bytes`);
 
-    // JPEG repair patch
+    // SAFELY DUPLICATE FILE (fix webkit blob issue)
+    let safeFile = f;
     try {
-        const safeBlob = await cleanImageBlob(files[0]);
-        console.log("cleanImageBlob returned:", safeBlob);
-
-        currentFile = new File([safeBlob], files[0].name, { type: "image/jpeg" });
-        console.log("Repaired File created:", currentFile);
+        safeFile = new File([f], f.name, {type: f.type});
+        console.log("✔ Safe clone done");
     } catch(err){
-        console.error("JPEG repair failed:", err);
-        setStatus("Image corrupted or unsupported", true);
-        return;
+        console.log("❌ Clone failed", err);
     }
 
-    console.log("Passing repaired file to preview...");
+    let finalFile = safeFile;
+
+    // ONLY FOR JPEG - attempt repair
+    if(f.type === "image/jpeg"){
+        try {
+            setStatus("Repairing JPEG...");
+            const repairedBlob = await cleanImageBlob(f);
+            finalFile = new File([repairedBlob], f.name, {type: "image/jpeg"});
+            console.log("✔ JPEG repair OK");
+        } catch(err){
+            console.log("❌ JPEG repair failed", err);
+        }
+    }
+
+    currentFile = finalFile;
+    console.log("➡️ Passing file to preview...");
     loadAndPreviewFile(currentFile);
 });
+
 
 /* DRAG + DROP */
 dropZone.addEventListener('dragover', e=>{

@@ -75,8 +75,10 @@
           <button id="crop-btn" title="Crop">Crop</button>
           <button id="undo-btn" title="Undo" disabled>Undo</button>
           <button id="redo-btn" title="Redo" disabled>Redo</button>
-          <button id="process-btn" class="primary" disabled>Process & Download</button>
-          <button id="reset-btn">Reset</button>
+          <!-- PROCESS / DOWNLOAD BUTTONS (split) -->
+	  <button id="process-btn" class="btn" aria-label="Process image">Process</button>
+  	  <button id="download-btn" class="btn" aria-label="Download processed image" disabled>Download</button>
+ 	  <button id="reset-btn" class="btn" aria-label="Reset">Reset</button>
         </div>
 
         <div class="zoom-row">

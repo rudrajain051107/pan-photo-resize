@@ -58,17 +58,21 @@ export async function processFile(file,presetKey='nsdl',custom=null,progressCb=n
         let handled=false;
         w.onmessage = async (ev)=>{
           const d = ev.data || {};
-          if(d.type === 'done'){ handled=true; resolve({blob: d.blob, info:{width:targetW,height:targetH,size:d.blob.size}}); w.terminate(); }
+          if(d.type === 'done'){
+		 handled=true;
+		 resolve({blob: d.blob, info:{width:targetW,height:targetH,size:d.blob.size}}); w.terminate(); }
           else if(d.type==='progress'){ if(progressCb) progressCb({progress:d.percent}); }
-          else if(d.type==='fallback'){ w.terminate(); const r= await processMainThread(file,targetW,targetH,maxBytes,progressCb); resolve(r); }
-          else if(d.type==='error'){ w.terminate(); const r= await processMainThread(file,targetW,targetH,maxBytes,progressCb); resolve(r); }
+          else if(d.type==='fallback'){ w.terminate(); const r= await processMainThread(file,targetW,targetH,maxBytes,progressCb); resolve(r.blob); }
+          else if(d.type==='error'){ w.terminate(); const r= await processMainThread(file,targetW,targetH,maxBytes,progressCb); resolve(r.blob); }
         };
         try{ w.postMessage({cmd:'process', blob: file, targetW: targetW, targetH: targetH, maxBytes}); }catch(e){ w.terminate(); processMainThread(file,targetW,targetH,maxBytes,progressCb).then(resolve).catch(reject); }
       });
-    }catch(e){
-      return await processMainThread(file,targetW,targetH,maxBytes,progressCb);
-    }
-  } else {
-    return await processMainThread(file,targetW,targetH,maxBytes,progressCb);
-  }
+	}catch(e){
+  	const r = await processMainThread(file,targetW,targetH,maxBytes,progressCb);
+  	return r.blob;
+	}
+	}else {
+  	const r = await processMainThread(file,targetW,targetH,maxBytes,progressCb);
+  	return r.blob;
+	}
 }

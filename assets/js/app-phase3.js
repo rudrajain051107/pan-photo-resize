@@ -56,7 +56,7 @@ const redoBtn = document.getElementById('redo-btn');
 const cropBtn = document.getElementById('crop-btn');
 const presetSelect = document.getElementById('preset-select');
 const statusEl = document.getElementById('status');
-
+const downloadBtn = document.getElementById('downloadBtn')
 const beforeCanvas = document.getElementById('before-canvas');
 const afterCanvas = document.getElementById('after-canvas');
 
@@ -104,24 +104,37 @@ async function loadAndPreviewFile(file){
   debug('loadAndPreviewFile: start');
 
   // helper: draw Image or ImageBitmap into canvas safely
-  const drawToCanvas = (imgLike, canvas) => {
-    try {
-      const ctx = canvas.getContext('2d');
-      const w = (imgLike.naturalWidth || imgLike.width || canvas.width || 200);
-      const h = (imgLike.naturalHeight || imgLike.height || Math.max(200, Math.round(w * 0.75)));
 
-      canvas.width = w;
-      canvas.height = h;
-      ctx.clearRect(0,0,w,h);
-      ctx.drawImage(imgLike, 0, 0, w, h);
-      debug(`drawToCanvas OK ${w}x${h}`);
-      return true;
-    } catch (err) {
-      debug('drawToCanvas failed: ' + err);
-      console.error(err);
+
+// BULLETPROOF drawToCanvas: supports HTMLImageElement and ImageBitmap
+const drawToCanvas = (imgLike, canvas) => {
+  try {
+    if (!imgLike) {
+      console.error("drawToCanvas: imgLike is null/undefined");
       return false;
     }
-  };
+
+    const ctx = canvas.getContext('2d');
+
+    // support multiple image types (HTMLImageElement, ImageBitmap)
+    const w = imgLike.naturalWidth || imgLike.width || imgLike.bitmapWidth || 200;
+    const h = imgLike.naturalHeight || imgLike.height || imgLike.bitmapHeight || Math.max(200, Math.round(w * 0.75));
+
+    // Force canvas pixel size to avoid Android 0x0 bug
+    canvas.width = w;
+    canvas.height = h;
+
+    // Clear and draw
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(imgLike, 0, 0, w, h);
+
+    console.log("drawToCanvas OK", w + "x" + h);
+    return true;
+  } catch (err) {
+    console.error("drawToCanvas error:", err);
+    return false;
+  }
+};
 
 
 
@@ -409,42 +422,109 @@ dropZone.addEventListener('drop', async e=>{
     loadAndPreviewFile(currentFile);
 });
 
-/* PROCESS BUTTON */
-processBtn.addEventListener('click', async ()=>{
-    if(!currentFile) return setStatus("Upload a file first", true);
 
-    setStatus("Processing...");
-    processBtn.disabled = true;
+/* PROCESS BUTTON (separated from Download) */
+processBtn.addEventListener('click', async () => {
+  if (!currentFile) return setStatus("Upload a file first", true);
 
-    try {
-        const preset = presetSelect.value;
-        const resultBlob = await processFile(currentFile, preset);
+  // UI lock during processing
+  setStatus("Processing...");
+  processBtn.disabled = true;
+  downloadBtn.disabled = true;
 
-        const resultURL = URL.createObjectURL(resultBlob);
-        const img = new Image();
+  try {
+    const preset = presetSelect ? presetSelect.value : null;
 
-        img.onload = ()=>{
-            drawImageToCanvas(img, afterCanvas);
-            setStatus("Done");
-            URL.revokeObjectURL(resultURL);
-        };
-
-        img.src = resultURL;
-    } 
-    catch(err){
-        console.error(err);
-        setStatus("Processing error", true);
+    // processFile should return a Blob (image/jpeg or image/png)
+    const resultBlob = await processFile(currentFile, preset);
+    if (!resultBlob || !(resultBlob instanceof Blob)) {
+      throw new Error("processFile did not return a Blob");
     }
 
+    // store processed file for download
+    const outName = (currentFile && currentFile.name) ? ("processed-" + currentFile.name) : "processed.jpg";
+    window._latestProcessedFile = new File([resultBlob], outName, { type: resultBlob.type || "image/jpeg" });
+
+    // show preview on AFTER canvas — try multiple decode methods (Image first, then ImageBitmap)
+    const drawProcessedPreview = async (blob) => {
+      // try Image via object URL
+      try {
+        const url = URL.createObjectURL(blob);
+        await new Promise((res, rej) => {
+          const i = new Image();
+          i.onload = () => { drawToCanvas(i, afterCanvas); URL.revokeObjectURL(url); res(); };
+          i.onerror = () => { URL.revokeObjectURL(url); rej(new Error("Image decode failed")); };
+          i.src = url;
+        });
+        return true;
+      } catch (e) {
+        console.warn("Processed preview image() failed, trying createImageBitmap:", e);
+      }
+
+      // fallback: ImageBitmap -> draw
+      try {
+        if (typeof createImageBitmap === "function") {
+          const bmp = await createImageBitmap(blob);
+          drawToCanvas(bmp, afterCanvas);
+          try { bmp.close && bmp.close(); } catch(_) {}
+          return true;
+        }
+      } catch (e) {
+        console.warn("Processed preview createImageBitmap failed:", e);
+      }
+
+      return false;
+    };
+
+    const previewOk = await drawProcessedPreview(resultBlob);
+    if (!previewOk) {
+      setStatus("Processed but preview failed — download to inspect", false);
+    } else {
+      setStatus("Done");
+    }
+
+    // enable download button now
+    downloadBtn.disabled = false;
+
+  } catch (err) {
+    console.error("Processing error:", err);
+    setStatus("Processing error", true);
+  } finally {
+    // always re-enable process so user can re-run if desired
     processBtn.disabled = false;
+  }
 });
 
-/* RESET BUTTON */
-resetBtn.addEventListener('click', ()=>{
-    beforeCanvas.getContext('2d').clearRect(0,0,beforeCanvas.width,beforeCanvas.height);
-    afterCanvas.getContext('2d').clearRect(0,0,afterCanvas.width,afterCanvas.height);
-    setStatus("Reset complete");
+/* DOWNLOAD BUTTON */
+downloadBtn.addEventListener('click', () => {
+  const file = window._latestProcessedFile;
+  if (!file) return setStatus('No processed file available', true);
+
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name || 'processed.jpg';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setStatus('Download started');
 });
+
+/* RESET BUTTON (ensure download cleared) */
+resetBtn.addEventListener('click', () => {
+  beforeCanvas.getContext('2d').clearRect(0, 0, beforeCanvas.width, beforeCanvas.height);
+  afterCanvas.getContext('2d').clearRect(0, 0, afterCanvas.width, afterCanvas.height);
+  currentFile = null;
+  window._latestProcessedFile = null;
+  processBtn.disabled = true;
+  downloadBtn.disabled = true;
+  cropBtn.disabled = true;
+  undoBtn.disabled = true;
+  redoBtn.disabled = true;
+  setStatus("Reset complete");
+});
+
 
 /* INITIAL STATUS */
 setStatus("Ready");

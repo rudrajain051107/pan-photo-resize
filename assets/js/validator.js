@@ -1,16 +1,11 @@
-/* validator.js */
-export default class Validator {
-  constructor({ maxSizeMB = 10, allowedTypes = ['image/jpeg','image/png'] } = {}){
-    this.maxSizeMB = maxSizeMB;
-    this.allowedTypes = allowedTypes;
-  }
-  validate(file){
-    if(!file) return { ok:false, msg:'No file' };
-    if (this.allowedTypes.length && !this.allowedTypes.includes(file.type)) {
-      return { ok:false, msg:'Unsupported file type. Use JPG or PNG.' };
-    }
-    const sizeMB = file.size / (1024*1024);
-    if (sizeMB > this.maxSizeMB) return { ok:false, msg: `Max file size ${this.maxSizeMB}MB exceeded (${sizeMB.toFixed(2)}MB)` };
-    return { ok:true, msg:'OK' };
-  }
+// validator.js - simple validation helpers
+export function validateFile(file, opts = {}) {
+  const maxSize = opts.maxSize || 10 * 1024 * 1024; // 10MB default
+  const allowed = opts.types || ['image/jpeg','image/png'];
+  const res = { valid: true, errors: [] };
+  if(!file) { res.valid = false; res.errors.push('no-file'); return res; }
+  if(file.size <= 0) { res.valid = false; res.errors.push('zero-size'); }
+  if(file.size > maxSize) { res.valid = false; res.errors.push('too-large'); }
+  if(allowed.indexOf(file.type) === -1) { res.valid = false; res.errors.push('invalid-type'); }
+  return res;
 }

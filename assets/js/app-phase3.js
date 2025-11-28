@@ -1,530 +1,296 @@
-/* app-phase3.js - FIXED FULL VERSION */
-
-/* IMPORTS */
+/* app-phase3.js - main orchestrator (Phase 3)
+   - Assumes index.html has elements with ids used below:
+     file-input, drop-zone, process-btn, download-btn, batch-zip-btn,
+     before-canvas, after-canvas, preset-select, quality-range,
+     undo-btn, redo-btn, crop-btn, status
+   - Uses modules: Cropper (cropper.js) and Validator (validator.js)
+   - Uses imageProcessor.processFileMain and processFileWorkerAvailable
+*/
 import Cropper from './cropper.js';
-import { validateFile } from './validator.js';
-import { processFile } from './imageProcessor.js';
-import { cleanImageBlob } from './fixImage.js';
+import Validator from './validator.js';
+import { processFileMain, processFileWorkerAvailable } from './imageProcessor.js';
 
-/* HARDCORE DEBUG LOGGER */
-function deepDebugImage(url){
-    return new Promise(res=>{
-        try {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
+// small helper (safe revoke) — keep in UI layer
+function safeRevoke(url){ try { URL.revokeObjectURL(url); } catch(e) { /* ignore */ } }
 
-            img.onload = ()=>{ 
-                console.log("HARDCORE: onload OK -", img.naturalWidth, img.naturalHeight);
-                res({ok:true});
-            };
+const el = id => document.getElementById(id);
 
-            img.onerror = (e)=>{
-                console.log("HARDCORE: onerror triggered", e);
-                console.log("HARDCORE: URL =", url);
+// Elements
+const fileInput = el('file-input');
+const dropZone = el('drop-zone');
+const processBtn = el('process-btn');
+const downloadBtn = el('download-btn');
+const batchZipBtn = el('batch-zip-btn');
+const statusEl = el('status');
+const beforeCanvas = el('before-canvas');
+const afterCanvas = el('after-canvas');
+const presetSelect = el('preset-select');
+const qualityRange = el('quality-range');
+const undoBtn = el('undo-btn');
+const redoBtn = el('redo-btn');
+const cropBtn = el('crop-btn');
 
-                // Try decoding via fetch + blob + bitmap
-                fetch(url).then(r=>r.blob()).then(b=>{
-                    console.log("HARDCORE: Blob fetched:", b.type, b.size);
+const validator = new Validator({ maxSizeMB: 10, allowedTypes: ['image/jpeg','image/png'] });
 
-                    return createImageBitmap(b);
-                }).then(bmp=>{
-                    console.log("HARDCORE: createImageBitmap SUCCESS: ", bmp.width, bmp.height);
-                    res({ok:true});
-                }).catch(err=>{
-                    console.log("HARDCORE: createImageBitmap FAILED:", err);
-                    res({ok:false,err});
-                });
-            };
-
-            img.src = url;
-        } catch(err){
-            console.log("HARDCORE: Unexpected exception:", err);
-            res({ok:false, err});
-        }
-    });
-}
-
-/* ELEMENTS */
-const fileInput = document.getElementById('file-input');
-const dropZone = document.getElementById('drop-zone');
-const processBtn = document.getElementById('process-btn');
-const resetBtn = document.getElementById('reset-btn');
-const downloadZipBtn = document.getElementById('download-zip');
-const clearBatchBtn = document.getElementById('clear-batch');
-const undoBtn = document.getElementById('undo-btn');
-const redoBtn = document.getElementById('redo-btn');
-const cropBtn = document.getElementById('crop-btn');
-const presetSelect = document.getElementById('preset-select');
-const statusEl = document.getElementById('status');
-const downloadBtn = document.getElementById('downloadBtn')
-const beforeCanvas = document.getElementById('before-canvas');
-const afterCanvas = document.getElementById('after-canvas');
-
-/* STATE */
-let files = [];
-let currentIndex = 0;
-let currentFile = null;
-let cropper = null;
-let editingImage = null;
-
-/* HELPERS */
-function setStatus(txt, err=false){
-    statusEl.textContent = txt;
-    statusEl.style.color = err ? "crimson" : "";
-}
-
-function drawImageToCanvas(img, canvas){
-    const ctx = canvas.getContext('2d');
-
-    // FIX: Ensure canvas has real size (Android bug)
-    const w = img.naturalWidth || 10;
-    const h = img.naturalHeight || 10;
-
-    canvas.width = w;
-    canvas.height = h;
-
-    console.log(`Drawing image at ${w}x${h}`);
-
-    try {
-        ctx.drawImage(img, 0, 0, w, h);
-    } catch(err){
-        console.error("drawImage failed", err);
-    }
-}
-
-// Robust loader: try multiple decode strategies until one works
-async function loadAndPreviewFile(file){
-  const debug = msg => {
-    const el = document.getElementById('debug-log');
-    if(el) el.appendChild(Object.assign(document.createElement('div'), { textContent: (new Date()).toLocaleTimeString() + ' - ' + msg }));
-    console.log(msg);
-  };
-
-  setStatus('Loading preview...');
-  debug('loadAndPreviewFile: start');
-
-  // helper: draw Image or ImageBitmap into canvas safely
-
-
-// BULLETPROOF drawToCanvas: supports HTMLImageElement and ImageBitmap
-const drawToCanvas = (imgLike, canvas) => {
-  try {
-    if (!imgLike) {
-      console.error("drawToCanvas: imgLike is null/undefined");
-      return false;
-    }
-
-    const ctx = canvas.getContext('2d');
-
-    // support multiple image types (HTMLImageElement, ImageBitmap)
-    const w = imgLike.naturalWidth || imgLike.width || imgLike.bitmapWidth || 200;
-    const h = imgLike.naturalHeight || imgLike.height || imgLike.bitmapHeight || Math.max(200, Math.round(w * 0.75));
-
-    // Force canvas pixel size to avoid Android 0x0 bug
-    canvas.width = w;
-    canvas.height = h;
-
-    // Clear and draw
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(imgLike, 0, 0, w, h);
-
-    console.log("drawToCanvas OK", w + "x" + h);
-    return true;
-  } catch (err) {
-    console.error("drawToCanvas error:", err);
-    return false;
-  }
+// Presets — editable
+const PRESETS = {
+  'NSDL (276×394)': { w: 276, h: 394, maxBytes: 50000 },
+  'UTI (213×213)': { w: 213, h: 213, maxBytes: 30000 },
+  'Aadhaar (600×600)': { w: 600, h: 600, maxBytes: 150000 },
+  'Passport (413×531)': { w: 413, h: 531, maxBytes: 100000 },
+  'Custom': null
 };
 
+// app state
+let files = [];               // {file, name}
+let currentIndex = -1;
+let currentImageBitmap = null;
+let cropper = null;
+let historyStack = [], historyIndex = -1;
+const HISTORY_MAX = 20;
 
-
-// Strategy A: normal Image using blob URL (ANDROID SAFE)
-const tryWithImageURL = (blob) => new Promise((resolve, reject) => {
-    try {
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-
-        img.crossOrigin = "anonymous";
-
-        img.onload = () => {
-            console.log("Strategy A: Image() loaded:", img.naturalWidth, img.naturalHeight);
-            resolve(img);
-        };
-
-        img.onerror = async () => {
-            console.warn("Strategy A failed — trying forced decode...");
-
-            try {
-                const fixed = await forceDecode(blob);
-                console.log("Force decode successful:", fixed);
-                resolve(fixed);
-            } catch (err) {
-                reject("Strategy A + force decode failed: " + err);
-            }
-        };
-
-        img.src = url;
-    } catch (err) {
-        reject(err);
-    }
-});
-
-// HARDCORE fallback: draw via createImageBitmap → Image → canvas
-async function forceDecode(blob){
-    const bitmap = await createImageBitmap(blob);
-    const canvas = document.createElement("canvas");
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(bitmap, 0, 0);
-    const fixedBlob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.95));
-    return await createImageBitmap(fixedBlob);
+function logStatus(msg, err=false){
+  if(!statusEl) return;
+  statusEl.textContent = msg;
+  statusEl.style.color = err ? 'crimson' : '';
 }
 
-  // Strategy B: FileReader -> dataURL
-  const tryWithDataURL = (blob) => new Promise((resolve, reject) => {
-    try {
-      const fr = new FileReader();
-      fr.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          debug('Strategy B: dataURL loaded');
-          resolve({ type: 'image', img });
-        };
-        img.onerror = () => {
-          debug('Strategy B: dataURL image error');
-          reject(new Error('dataURL decode failed'));
-        };
-        img.src = fr.result;
-      };
-      fr.onerror = (e) => { debug('Strategy B: FileReader error'); reject(e); };
-      fr.readAsDataURL(blob);
-    } catch (e) { reject(e); }
-  });
+// history helpers
+function pushHistory(state){
+  if (historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
+  historyStack.push(JSON.parse(JSON.stringify(state)));
+  if (historyStack.length > HISTORY_MAX) historyStack.shift();
+  historyIndex = historyStack.length - 1;
+  updateUndoRedo();
+}
+function undoHistory(){
+  if (historyIndex <= 0) return null;
+  historyIndex--;
+  updateUndoRedo();
+  return JSON.parse(JSON.stringify(historyStack[historyIndex]));
+}
+function redoHistory(){
+  if (historyIndex >= historyStack.length - 1) return null;
+  historyIndex++;
+  updateUndoRedo();
+  return JSON.parse(JSON.stringify(historyStack[historyIndex]));
+}
+function updateUndoRedo(){
+  if(undoBtn) undoBtn.disabled = !(historyIndex > 0);
+  if(redoBtn) redoBtn.disabled = !(historyIndex < historyStack.length - 1);
+}
 
-  // Strategy C: createImageBitmap
-  const tryWithImageBitmap = async (blob) => {
-    try {
-      if (!('createImageBitmap' in window)) throw new Error('createImageBitmap not available');
-      const bmp = await createImageBitmap(blob);
-      debug('Strategy C: createImageBitmap OK');
-      return { type: 'bitmap', bmp };
-    } catch (e) {
-      debug('Strategy C: createImageBitmap failed: ' + e);
-      throw e;
-    }
-  };
+// Draw image to canvas (keeps aspect ratio and limits to 1024 width)
+function drawImageToCanvas(imgBitmap, canvas){
+  if(!canvas || !imgBitmap) return;
+  const ctx = canvas.getContext('2d');
+  const maxW = 1024;
+  const iw = imgBitmap.naturalWidth || imgBitmap.width || imgBitmap.width;
+  const ih = imgBitmap.naturalHeight || imgBitmap.height || imgBitmap.height;
+  const scale = Math.min(1, maxW / iw);
+  const cw = Math.round(iw * scale);
+  const ch = Math.round(ih * scale);
+  canvas.width = cw;
+  canvas.height = ch;
+  ctx.clearRect(0,0,cw,ch);
+  ctx.drawImage(imgBitmap, 0, 0, cw, ch);
+}
 
-  // Strategy D: Fetch + rebuild Blob (force rebuild from bytes)
-  const rebuildBlobFromArrayBuffer = async (origFile) => {
-    try {
-      const arrayBuffer = await origFile.arrayBuffer();
-      const ba = new Uint8Array(arrayBuffer);
-      const rebuilt = new Blob([ba], { type: origFile.type || 'application/octet-stream' });
-      debug('Strategy D: rebuilt Blob from ArrayBuffer');
-      return rebuilt;
-    } catch (e) {
-      debug('Strategy D: rebuild failed: ' + e);
-      throw e;
-    }
-  };
-
-  // Try sequence: A -> B -> C -> rebuild -> A/B/C
+// Safe image decoding using createImageBitmap when available
+async function loadImageBitmapFromFile(file){
   try {
-    // quick guard
-    if(!file || file.size === 0) {
-      setStatus('No file or zero-size', true);
-      debug('Early exit: zero-size file');
-      return;
-    }
-
-    debug(`File: ${file.name} | ${file.type} | ${Math.round(file.size/1024)} KB`);
-
-    // 1: Strategy A
-    try {
-      const r = await tryWithImageURL(file);
-      if (drawToCanvas(r.img, beforeCanvas)) {
-        editingImage = r.img;
-        setStatus(`Loaded ${file.name}`);
-        return;
+    if (window.createImageBitmap) {
+      try {
+        return await createImageBitmap(file);
+      } catch(e) {
+        // fallback to Image element if createImageBitmap fails
       }
-    } catch (e) {
-      debug('Strategy A failed, will fallback');
     }
-
-    // 2: Strategy B (FileReader)
-    try {
-      const r = await tryWithDataURL(file);
-      if (drawToCanvas(r.img, beforeCanvas)) {
-        editingImage = r.img;
-        setStatus(`Loaded ${file.name} (dataURL)`);
-        return;
-      }
-    } catch (e) {
-      debug('Strategy B failed, will fallback');
-    }
-
-    // 3: Strategy C (ImageBitmap)
-    try {
-      const r = await tryWithImageBitmap(file);
-      // draw ImageBitmap
-      const ctx = beforeCanvas.getContext('2d');
-      beforeCanvas.width = r.bmp.width || Math.max(200, r.bmp.width);
-      beforeCanvas.height = r.bmp.height || Math.max(200, r.bmp.height || 200);
-      ctx.drawImage(r.bmp, 0, 0, beforeCanvas.width, beforeCanvas.height);
-      debug('Drew ImageBitmap to canvas');
-      editingImage = null; // bitmap used
-      setStatus(`Loaded ${file.name} (bitmap)`);
-      return;
-    } catch (e) {
-      debug('Strategy C failed, will attempt rebuild');
-    }
-
-    // 4: Rebuild blob from arrayBuffer then retry A/B/C
-    try {
-      const rebuilt = await rebuildBlobFromArrayBuffer(file);
-
-      // try A on rebuilt
-      try {
-        const r = await tryWithImageURL(rebuilt);
-        if (drawToCanvas(r.img, beforeCanvas)) {
-          editingImage = r.img;
-          setStatus(`Loaded ${file.name} (rebuilt)`);
-          return;
-        }
-      } catch (e) { debug('Rebuilt A failed'); }
-
-      // try B on rebuilt
-      try {
-        const r = await tryWithDataURL(rebuilt);
-        if (drawToCanvas(r.img, beforeCanvas)) {
-          editingImage = r.img;
-          setStatus(`Loaded ${file.name} (rebuilt dataURL)`);
-          return;
-        }
-      } catch (e) { debug('Rebuilt B failed'); }
-
-      // try C on rebuilt
-      try {
-        const r = await tryWithImageBitmap(rebuilt);
-        const ctx = beforeCanvas.getContext('2d');
-        beforeCanvas.width = r.bmp.width || 200;
-        beforeCanvas.height = r.bmp.height || 200;
-        ctx.drawImage(r.bmp, 0, 0, beforeCanvas.width, beforeCanvas.height);
-        debug('Drew rebuilt ImageBitmap to canvas');
-        editingImage = null;
-        setStatus(`Loaded ${file.name} (rebuilt bitmap)`);
-        return;
-      } catch (e) { debug('Rebuilt C failed'); }
-
-    } catch (e) {
-      debug('Rebuild failed: ' + e);
-    }
-
-    // If all attempts fail:
-    setStatus('Failed to load image', true);
-    debug('ALL decoding strategies failed');
-  } catch (err) {
-    console.error('loadAndPreviewFile caught', err);
-    setStatus('Failed to load image', true);
-    debug('loadAndPreviewFile fatal: ' + err);
+    // fallback
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = ()=> resolve(img);
+      img.onerror = ()=> reject(new Error('Image decode failed'));
+      img.src = URL.createObjectURL(file);
+    });
+  } catch(err) {
+    // final fallback try
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = ()=> resolve(img);
+      img.onerror = ()=> reject(new Error('Image decode failed'));
+      img.src = URL.createObjectURL(file);
+    });
   }
 }
 
-/* ============================================================
-   FILE INPUT HANDLER — Android Safe + JPEG Repair
-   ============================================================ */
+// Load & preview single file
+async function loadAndPreviewFile(fileObj){
+  try{
+    logStatus('Loading image...');
+    const file = fileObj.file;
+    const imgBitmap = await loadImageBitmapFromFile(file);
+    currentImageBitmap = imgBitmap;
+    drawImageToCanvas(imgBitmap, beforeCanvas);
+    // init cropper
+    if(!cropper) cropper = new Cropper(beforeCanvas);
+    cropper.start({ x: 0, y: 0, w: beforeCanvas.width, h: beforeCanvas.height });
+    pushHistory({ type: 'preview', timestamp: Date.now(), width: beforeCanvas.width, height: beforeCanvas.height });
+    logStatus('Preview ready');
+  }catch(e){
+    console.error(e);
+    logStatus('Image failed to load or decode', true);
+  }
+}
 
-fileInput.addEventListener('change', async (e)=>{
-    console.log("🔥 file-input triggered");
-
-    const f = e.target.files?.[0];
-
-    if(!f){
-        console.log("❌ No file selected");
-        setStatus("No file selected", true);
-        return;
-    }
-
-    // BLOCK ANDROID'S 0-BYTE BUG
-    if(f.size < 100){
-        console.log("❌ File too small — corrupted event");
-        setStatus("Corrupted input — select again", true);
-        return;
-    }
-
-    console.log(`🔥 REAL FILE DETECTED: ${f.name} | ${f.type} | ${f.size} bytes`);
-
-    // SAFELY DUPLICATE FILE (fix webkit blob issue)
-    let safeFile = f;
-    try {
-        safeFile = new File([f], f.name, {type: f.type});
-        console.log("✔ Safe clone done");
-    } catch(err){
-        console.log("❌ Clone failed", err);
-    }
-
-    let finalFile = safeFile;
-
-    // ONLY FOR JPEG - attempt repair
-    if(f.type === "image/jpeg"){
-        try {
-            setStatus("Repairing JPEG...");
-            const repairedBlob = await cleanImageBlob(f);
-            finalFile = new File([repairedBlob], f.name, {type: "image/jpeg"});
-            console.log("✔ JPEG repair OK");
-        } catch(err){
-            console.log("❌ JPEG repair failed", err);
-        }
-    }
-
-    currentFile = finalFile;
-    console.log("➡️ Passing file to preview...");
-    loadAndPreviewFile(currentFile);
-});
-
-
-/* DRAG + DROP */
-dropZone.addEventListener('dragover', e=>{
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-});
-
-dropZone.addEventListener('dragleave', e=>{
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-});
-
-dropZone.addEventListener('drop', async e=>{
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-
-    const list = Array.from(e.dataTransfer.files || []);
-    if(list.length === 0) return;
-
-    files = list.filter(f => validateFile(f).valid);
-    if(files.length === 0){
-        setStatus("No valid images dropped", true);
-        return;
-    }
-
-    console.log("Attempting JPEG repair (drop)...");
-
-    try {
-        const safeBlob = await cleanImageBlob(files[0]);
-        currentFile = new File([safeBlob], files[0].name, { type: "image/jpeg" });
-    } catch(err){
-        console.error("JPEG repair failed:", err);
-        setStatus("Image corrupted or unsupported", true);
-        return;
-    }
-
-    loadAndPreviewFile(currentFile);
-});
-
-
-/* PROCESS BUTTON (separated from Download) */
-processBtn.addEventListener('click', async () => {
-  if (!currentFile) return setStatus("Upload a file first", true);
-
-  // UI lock during processing
-  setStatus("Processing...");
-  processBtn.disabled = true;
-  downloadBtn.disabled = true;
-
+// Process current file (uses worker if available)
+async function processCurrentFile(){
+  if(currentIndex < 0 || !files[currentIndex]) { logStatus('No file selected', true); return; }
+  const fileObj = files[currentIndex];
+  const presetName = presetSelect ? presetSelect.value : 'Custom';
+  const preset = PRESETS[presetName] || null;
+  const quality = qualityRange ? Number(qualityRange.value) : 0.92;
+  logStatus('Processing...');
+  const cropRect = cropper && cropper.getRect ? cropper.getRect() : null;
+  const useWorker = processFileWorkerAvailable();
   try {
-    const preset = presetSelect ? presetSelect.value : null;
-
-    // processFile should return a Blob (image/jpeg or image/png)
-    const resultBlob = await processFile(currentFile, preset);
-    if (!resultBlob || !(resultBlob instanceof Blob)) {
-      throw new Error("processFile did not return a Blob");
-    }
-
-    // store processed file for download
-    const outName = (currentFile && currentFile.name) ? ("processed-" + currentFile.name) : "processed.jpg";
-    window._latestProcessedFile = new File([resultBlob], outName, { type: resultBlob.type || "image/jpeg" });
-
-    // show preview on AFTER canvas — try multiple decode methods (Image first, then ImageBitmap)
-    const drawProcessedPreview = async (blob) => {
-      // try Image via object URL
-      try {
-        const url = URL.createObjectURL(blob);
-        await new Promise((res, rej) => {
-          const i = new Image();
-          i.onload = () => { drawToCanvas(i, afterCanvas); URL.revokeObjectURL(url); res(); };
-          i.onerror = () => { URL.revokeObjectURL(url); rej(new Error("Image decode failed")); };
-          i.src = url;
-        });
-        return true;
-      } catch (e) {
-        console.warn("Processed preview image() failed, trying createImageBitmap:", e);
-      }
-
-      // fallback: ImageBitmap -> draw
-      try {
-        if (typeof createImageBitmap === "function") {
-          const bmp = await createImageBitmap(blob);
-          drawToCanvas(bmp, afterCanvas);
-          try { bmp.close && bmp.close(); } catch(_) {}
-          return true;
-        }
-      } catch (e) {
-        console.warn("Processed preview createImageBitmap failed:", e);
-      }
-
-      return false;
-    };
-
-    const previewOk = await drawProcessedPreview(resultBlob);
-    if (!previewOk) {
-      setStatus("Processed but preview failed — download to inspect", false);
-    } else {
-      setStatus("Done");
-    }
-
-    // enable download button now
+    const res = await processFileMain({
+      file: fileObj.file,
+      preset,
+      quality,
+      cropRect,
+      useWorker
+    });
+    let finalObj = res;
+    if (res instanceof Blob) finalObj = { blob: res };
+    if (!finalObj || !finalObj.blob) { logStatus('Processing returned no blob', true); return; }
+    const afterBitmap = await loadImageBitmapFromFile(finalObj.blob);
+    drawImageToCanvas(afterBitmap, afterCanvas);
+    pushHistory({ type:'processed', fileName: fileObj.name, time: Date.now() });
+    logStatus('Processing complete');
     downloadBtn.disabled = false;
-
+    downloadBtn.dataset.blobUrl = URL.createObjectURL(finalObj.blob);
+    downloadBtn.dataset.fileName = (fileObj.name || 'output.jpg').replace(/\.[^.]+$/, '') + '_resized.jpg';
   } catch (err) {
-    console.error("Processing error:", err);
-    setStatus("Processing error", true);
-  } finally {
-    // always re-enable process so user can re-run if desired
-    processBtn.disabled = false;
+    console.error(err);
+    logStatus('Processing failed: ' + (err.message || err), true);
   }
-});
+}
 
-/* DOWNLOAD BUTTON */
-downloadBtn.addEventListener('click', () => {
-  const file = window._latestProcessedFile;
-  if (!file) return setStatus('No processed file available', true);
-
-  const url = URL.createObjectURL(file);
+// Batch -> zip
+async function downloadBatchZip(){
+  if (typeof JSZip === 'undefined') {
+    logStatus('JSZip not loaded', true);
+    return;
+  }
+  logStatus('Preparing batch zip...');
+  const zip = new JSZip();
+  for (let i=0;i<files.length;i++){
+    try{
+      const f = files[i];
+      const res = await processFileMain({ file: f.file, preset: PRESETS[presetSelect.value] || null, quality: 0.92, useWorker: processFileWorkerAvailable() });
+      const obj = res instanceof Blob ? { blob: res } : res;
+      if (obj && obj.blob) {
+        zip.file((f.name || `file${i}`).replace(/\.[^.]+$/,'') + '.jpg', obj.blob);
+      }
+    }catch(e){
+      console.warn('Batch item failed', e);
+    }
+  }
+  const content = await zip.generateAsync({ type: 'blob' }, meta => {
+    logStatus(`Zipping: ${Math.round(meta.percent)}%`);
+  });
+  const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
-  a.download = file.name || 'processed.jpg';
-  document.body.appendChild(a);
+  a.download = 'pan-photos.zip';
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  setStatus('Download started');
-});
+  setTimeout(()=>safeRevoke(url), 60_000);
+  logStatus('Batch ready');
+}
 
-/* RESET BUTTON (ensure download cleared) */
-resetBtn.addEventListener('click', () => {
-  beforeCanvas.getContext('2d').clearRect(0, 0, beforeCanvas.width, beforeCanvas.height);
-  afterCanvas.getContext('2d').clearRect(0, 0, afterCanvas.width, afterCanvas.height);
-  currentFile = null;
-  window._latestProcessedFile = null;
-  processBtn.disabled = true;
-  downloadBtn.disabled = true;
-  cropBtn.disabled = true;
-  undoBtn.disabled = true;
-  redoBtn.disabled = true;
-  setStatus("Reset complete");
-});
+// Drag & drop setup
+function setupDragDrop(){
+  if(!dropZone) return;
+  ['dragenter','dragover'].forEach(evt=> dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
+  ['dragleave','drop'].forEach(evt=> dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
+  dropZone.addEventListener('drop', async e => {
+    const dt = e.dataTransfer;
+    if(!dt) return;
+    const fls = Array.from(dt.files || []);
+    await handleFilesAdded(fls);
+  });
+}
 
+// handle file input selection
+async function handleFilesAdded(fileList){
+  for(const f of fileList){
+    try{
+      const v = validator.validate(f);
+      if(!v.ok) { logStatus(v.msg, true); continue; }
+      files.push({ file: f, name: f.name });
+    }catch(e){ console.error(e); }
+  }
+  if(files.length>0){
+    currentIndex = 0;
+    await loadAndPreviewFile(files[currentIndex]);
+    processBtn.disabled = false;
+    batchZipBtn.disabled = files.length < 2;
+  }
+}
 
-/* INITIAL STATUS */
-setStatus("Ready");
+// UI wiring
+function wireUi(){
+  if (fileInput) fileInput.addEventListener('change', async e => {
+    const fls = Array.from(e.target.files || []);
+    await handleFilesAdded(fls);
+  });
+  if (processBtn) processBtn.addEventListener('click', processCurrentFile);
+  if (batchZipBtn) batchZipBtn.addEventListener('click', downloadBatchZip);
+  if (downloadBtn) downloadBtn.addEventListener('click', () => {
+    const url = downloadBtn.dataset.blobUrl;
+    const name = downloadBtn.dataset.fileName || 'output.jpg';
+    if (!url) { logStatus('Nothing to download', true); return; }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(()=>safeRevoke(url), 60_000);
+  });
+  if (undoBtn) undoBtn.addEventListener('click', () => {
+    const s = undoHistory();
+    if (s) logStatus('Undo performed');
+  });
+  if (redoBtn) redoBtn.addEventListener('click', () => {
+    const s = redoHistory();
+    if (s) logStatus('Redo performed');
+  });
+  if (cropBtn) cropBtn.addEventListener('click', () => {
+    if (cropper && cropper.commit) {
+      cropper.commit();
+      pushHistory({ type:'crop', time: Date.now(), rect: cropper.getRect() });
+    }
+  });
+  setupDragDrop();
+}
+
+// init presets dropdown
+function initPresets(){
+  if(!presetSelect) return;
+  presetSelect.innerHTML = '';
+  Object.keys(PRESETS).forEach(k => {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = k;
+    presetSelect.appendChild(opt);
+  });
+}
+
+// init
+(function init(){
+  initPresets();
+  wireUi();
+  logStatus('Ready');
+})();
+
+export { loadAndPreviewFile, processCurrentFile, pushHistory, undoHistory, redoHistory };

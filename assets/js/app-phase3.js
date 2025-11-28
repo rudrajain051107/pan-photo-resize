@@ -1,296 +1,514 @@
-/* app-phase3.js - main orchestrator (Phase 3)
-   - Assumes index.html has elements with ids used below:
-     file-input, drop-zone, process-btn, download-btn, batch-zip-btn,
-     before-canvas, after-canvas, preset-select, quality-range,
-     undo-btn, redo-btn, crop-btn, status
-   - Uses modules: Cropper (cropper.js) and Validator (validator.js)
-   - Uses imageProcessor.processFileMain and processFileWorkerAvailable
-*/
+// assets/js/app-phase3.js
+// Phase-3 — robust, Android-safe frontend orchestrator
+// Rewritten: load/preview, crop, undo/redo, processing, download, batch ZIP, UI controls.
+// Assumes these modules exist in repo: Cropper, validateFile, processFile, cleanImageBlob
 import Cropper from './cropper.js';
-import Validator from './validator.js';
-import { processFileMain, processFileWorkerAvailable } from './imageProcessor.js';
+import { validateFile } from './validator.js';
+import { processFile } from './imageProcessor.js';
+import { cleanImageBlob } from './fixImage.js';
 
-// small helper (safe revoke) — keep in UI layer
-function safeRevoke(url){ try { URL.revokeObjectURL(url); } catch(e) { /* ignore */ } }
+/* ----- Elements ----- */
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const processBtn = document.getElementById('process-btn');
+const resetBtn = document.getElementById('reset-btn');
+const downloadZipBtn = document.getElementById('download-zip');
+const clearBatchBtn = document.getElementById('clear-batch');
+const undoBtn = document.getElementById('undo-btn');
+const redoBtn = document.getElementById('redo-btn');
+const cropBtn = document.getElementById('crop-btn');
+const presetSelect = document.getElementById('preset-select');
+const statusEl = document.getElementById('status');
+const downloadBtn = document.getElementById('downloadBtn');
+const beforeCanvas = document.getElementById('before-canvas');
+const afterCanvas  = document.getElementById('after-canvas');
+const zoomSlider   = document.querySelector('input[type="range"][id="zoom"]') || null;
+const debugLogEl   = document.getElementById('debug-log') || null;
 
-const el = id => document.getElementById(id);
-
-// Elements
-const fileInput = el('file-input');
-const dropZone = el('drop-zone');
-const processBtn = el('process-btn');
-const downloadBtn = el('download-btn');
-const batchZipBtn = el('batch-zip-btn');
-const statusEl = el('status');
-const beforeCanvas = el('before-canvas');
-const afterCanvas = el('after-canvas');
-const presetSelect = el('preset-select');
-const qualityRange = el('quality-range');
-const undoBtn = el('undo-btn');
-const redoBtn = el('redo-btn');
-const cropBtn = el('crop-btn');
-
-const validator = new Validator({ maxSizeMB: 10, allowedTypes: ['image/jpeg','image/png'] });
-
-// Presets — editable
-const PRESETS = {
-  'NSDL (276×394)': { w: 276, h: 394, maxBytes: 50000 },
-  'UTI (213×213)': { w: 213, h: 213, maxBytes: 30000 },
-  'Aadhaar (600×600)': { w: 600, h: 600, maxBytes: 150000 },
-  'Passport (413×531)': { w: 413, h: 531, maxBytes: 100000 },
-  'Custom': null
-};
-
-// app state
-let files = [];               // {file, name}
-let currentIndex = -1;
-let currentImageBitmap = null;
-let cropper = null;
-let historyStack = [], historyIndex = -1;
+/* ----- State ----- */
+let files = [];                 // batch queue (File[])
+let currentIndex = 0;           // selected index in files
+let currentFile = null;         // File object for preview/processing
+let editingImage = null;        // HTMLImageElement or ImageBitmap for preview
+let cropper = null;             // Cropper instance (if used)
+let cropMode = false;
+let historyStack = [];          // dataURL snapshots for undo/redo (before-canvas)
+let historyIndex = -1;
+let latestProcessedFile = null; // File (processed) for download
 const HISTORY_MAX = 20;
 
-function logStatus(msg, err=false){
+/* ----- Helpers ----- */
+function logDebug(msg){
+  try {
+    console.log(msg);
+    if(debugLogEl){
+      const d = document.createElement('div');
+      d.textContent = (new Date()).toLocaleTimeString() + ' — ' + msg;
+      debugLogEl.appendChild(d);
+      debugLogEl.scrollTop = debugLogEl.scrollHeight;
+    }
+  } catch(e){ /* ignore */ }
+}
+
+function setStatus(text, isError=false){
   if(!statusEl) return;
-  statusEl.textContent = msg;
-  statusEl.style.color = err ? 'crimson' : '';
+  statusEl.textContent = text;
+  statusEl.style.color = isError ? 'crimson' : '';
 }
 
-// history helpers
-function pushHistory(state){
-  if (historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
-  historyStack.push(JSON.parse(JSON.stringify(state)));
-  if (historyStack.length > HISTORY_MAX) historyStack.shift();
-  historyIndex = historyStack.length - 1;
-  updateUndoRedo();
+/* Draw helpers: bulletproof */
+function drawToCanvas(imgLike, canvas){
+  try {
+    if(!imgLike || !canvas) return false;
+    const ctx = canvas.getContext('2d');
+    // derive natural sizes for different image types
+    const w = imgLike.naturalWidth || imgLike.width || imgLike.bitmapWidth || 400;
+    const h = imgLike.naturalHeight || imgLike.height || imgLike.bitmapHeight || Math.max(200, Math.round(w * 0.75));
+    // force canvas pixel size (fixes many Android 0x0 issues)
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(imgLike, 0, 0, canvas.width, canvas.height);
+    return true;
+  } catch(err){
+    logDebug('drawToCanvas error: ' + (err && err.message ? err.message : err));
+    return false;
+  }
 }
-function undoHistory(){
-  if (historyIndex <= 0) return null;
+
+/* Save current beforeCanvas snapshot into history */
+function pushHistory(){
+  try {
+    const data = beforeCanvas.toDataURL('image/jpeg', 0.9);
+    // remove "forward" states if user undid then made change
+    if(historyIndex < historyStack.length - 1){
+      historyStack.splice(historyIndex + 1);
+    }
+    historyStack.push(data);
+    if(historyStack.length > HISTORY_MAX) historyStack.shift();
+    historyIndex = historyStack.length - 1;
+    updateUndoRedoButtons();
+  } catch(e){
+    logDebug('pushHistory failed: ' + e);
+  }
+}
+function updateUndoRedoButtons(){
+  undoBtn.disabled = !(historyIndex > 0);
+  redoBtn.disabled = !(historyIndex < historyStack.length - 1);
+}
+
+function undo(){
+  if(!(historyIndex > 0)) return;
   historyIndex--;
-  updateUndoRedo();
-  return JSON.parse(JSON.stringify(historyStack[historyIndex]));
+  const data = historyStack[historyIndex];
+  const img = new Image();
+  img.onload = ()=> { drawToCanvas(img, beforeCanvas); };
+  img.src = data;
+  updateUndoRedoButtons();
 }
-function redoHistory(){
-  if (historyIndex >= historyStack.length - 1) return null;
+function redo(){
+  if(!(historyIndex < historyStack.length - 1)) return;
   historyIndex++;
-  updateUndoRedo();
-  return JSON.parse(JSON.stringify(historyStack[historyIndex]));
-}
-function updateUndoRedo(){
-  if(undoBtn) undoBtn.disabled = !(historyIndex > 0);
-  if(redoBtn) redoBtn.disabled = !(historyIndex < historyStack.length - 1);
-}
-
-// Draw image to canvas (keeps aspect ratio and limits to 1024 width)
-function drawImageToCanvas(imgBitmap, canvas){
-  if(!canvas || !imgBitmap) return;
-  const ctx = canvas.getContext('2d');
-  const maxW = 1024;
-  const iw = imgBitmap.naturalWidth || imgBitmap.width || imgBitmap.width;
-  const ih = imgBitmap.naturalHeight || imgBitmap.height || imgBitmap.height;
-  const scale = Math.min(1, maxW / iw);
-  const cw = Math.round(iw * scale);
-  const ch = Math.round(ih * scale);
-  canvas.width = cw;
-  canvas.height = ch;
-  ctx.clearRect(0,0,cw,ch);
-  ctx.drawImage(imgBitmap, 0, 0, cw, ch);
+  const data = historyStack[historyIndex];
+  const img = new Image();
+  img.onload = ()=> { drawToCanvas(img, beforeCanvas); };
+  img.src = data;
+  updateUndoRedoButtons();
 }
 
-// Safe image decoding using createImageBitmap when available
-async function loadImageBitmapFromFile(file){
-  try {
-    if (window.createImageBitmap) {
-      try {
-        return await createImageBitmap(file);
-      } catch(e) {
-        // fallback to Image element if createImageBitmap fails
-      }
-    }
-    // fallback
-    return await new Promise((resolve, reject) => {
+/* Safe revoke */
+function safeRevoke(url){
+  try { URL.revokeObjectURL(url); } catch(e){ /* ignore */ }
+}
+
+/* Multi-strategy loader (robust for Android) */
+async function loadAndPreviewFile(file){
+  setStatus('Loading preview...');
+  logDebug(`loadAndPreviewFile start: ${file.name || 'unknown'} ${file.type || ''} ${file.size||0} bytes`);
+  // reset UI flags
+  editingImage = null;
+  cropMode = false;
+  if(cropper){ try{ cropper = null; } catch(e){} }
+
+  // Guard
+  if(!file || file.size === 0){
+    setStatus('No file or zero-size', true); return;
+  }
+
+  // small helper strategies
+  const tryWithObjectURL = (blob) => new Promise((resolve,reject)=>{
+    try {
+      const url = URL.createObjectURL(blob);
       const img = new Image();
-      img.onload = ()=> resolve(img);
-      img.onerror = ()=> reject(new Error('Image decode failed'));
-      img.src = URL.createObjectURL(file);
-    });
-  } catch(err) {
-    // final fallback try
-    return await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = ()=> resolve(img);
-      img.onerror = ()=> reject(new Error('Image decode failed'));
-      img.src = URL.createObjectURL(file);
-    });
-  }
-}
-
-// Load & preview single file
-async function loadAndPreviewFile(fileObj){
-  try{
-    logStatus('Loading image...');
-    const file = fileObj.file;
-    const imgBitmap = await loadImageBitmapFromFile(file);
-    currentImageBitmap = imgBitmap;
-    drawImageToCanvas(imgBitmap, beforeCanvas);
-    // init cropper
-    if(!cropper) cropper = new Cropper(beforeCanvas);
-    cropper.start({ x: 0, y: 0, w: beforeCanvas.width, h: beforeCanvas.height });
-    pushHistory({ type: 'preview', timestamp: Date.now(), width: beforeCanvas.width, height: beforeCanvas.height });
-    logStatus('Preview ready');
-  }catch(e){
-    console.error(e);
-    logStatus('Image failed to load or decode', true);
-  }
-}
-
-// Process current file (uses worker if available)
-async function processCurrentFile(){
-  if(currentIndex < 0 || !files[currentIndex]) { logStatus('No file selected', true); return; }
-  const fileObj = files[currentIndex];
-  const presetName = presetSelect ? presetSelect.value : 'Custom';
-  const preset = PRESETS[presetName] || null;
-  const quality = qualityRange ? Number(qualityRange.value) : 0.92;
-  logStatus('Processing...');
-  const cropRect = cropper && cropper.getRect ? cropper.getRect() : null;
-  const useWorker = processFileWorkerAvailable();
-  try {
-    const res = await processFileMain({
-      file: fileObj.file,
-      preset,
-      quality,
-      cropRect,
-      useWorker
-    });
-    let finalObj = res;
-    if (res instanceof Blob) finalObj = { blob: res };
-    if (!finalObj || !finalObj.blob) { logStatus('Processing returned no blob', true); return; }
-    const afterBitmap = await loadImageBitmapFromFile(finalObj.blob);
-    drawImageToCanvas(afterBitmap, afterCanvas);
-    pushHistory({ type:'processed', fileName: fileObj.name, time: Date.now() });
-    logStatus('Processing complete');
-    downloadBtn.disabled = false;
-    downloadBtn.dataset.blobUrl = URL.createObjectURL(finalObj.blob);
-    downloadBtn.dataset.fileName = (fileObj.name || 'output.jpg').replace(/\.[^.]+$/, '') + '_resized.jpg';
-  } catch (err) {
-    console.error(err);
-    logStatus('Processing failed: ' + (err.message || err), true);
-  }
-}
-
-// Batch -> zip
-async function downloadBatchZip(){
-  if (typeof JSZip === 'undefined') {
-    logStatus('JSZip not loaded', true);
-    return;
-  }
-  logStatus('Preparing batch zip...');
-  const zip = new JSZip();
-  for (let i=0;i<files.length;i++){
-    try{
-      const f = files[i];
-      const res = await processFileMain({ file: f.file, preset: PRESETS[presetSelect.value] || null, quality: 0.92, useWorker: processFileWorkerAvailable() });
-      const obj = res instanceof Blob ? { blob: res } : res;
-      if (obj && obj.blob) {
-        zip.file((f.name || `file${i}`).replace(/\.[^.]+$/,'') + '.jpg', obj.blob);
-      }
-    }catch(e){
-      console.warn('Batch item failed', e);
-    }
-  }
-  const content = await zip.generateAsync({ type: 'blob' }, meta => {
-    logStatus(`Zipping: ${Math.round(meta.percent)}%`);
+      img.crossOrigin = 'anonymous';
+      img.onload = ()=>{ safeRevoke(url); resolve(img); };
+      img.onerror = async (e)=>{
+        safeRevoke(url);
+        reject(new Error('objectURL decode failed'));
+      };
+      img.src = url;
+    } catch(e){ reject(e); }
   });
-  const url = URL.createObjectURL(content);
+
+  const tryWithDataURL = (blob) => new Promise((resolve,reject)=>{
+    try {
+      const fr = new FileReader();
+      fr.onload = ()=> {
+        const img = new Image();
+        img.onload = ()=> resolve(img);
+        img.onerror = ()=> reject(new Error('dataURL decode failed'));
+        img.src = fr.result;
+      };
+      fr.onerror = (e)=> reject(e);
+      fr.readAsDataURL(blob);
+    } catch(e){ reject(e); }
+  });
+
+  const tryWithBitmap = async (blob) => {
+    if(!('createImageBitmap' in window)) throw new Error('no createImageBitmap');
+    const bmp = await createImageBitmap(blob);
+    return bmp;
+  };
+
+  // rebuild blob (force re-encode) fallback
+  const rebuildBlob = async (orig) => {
+    try {
+      const ab = await orig.arrayBuffer();
+      const arr = new Uint8Array(ab);
+      return new Blob([arr], { type: orig.type || 'image/jpeg' });
+    } catch(e){
+      throw e;
+    }
+  };
+
+  // Try A: object URL -> Image
+  try {
+    const img = await tryWithObjectURL(file);
+    if(drawToCanvas(img, beforeCanvas)){
+      editingImage = img;
+      pushHistory();
+      setStatus(`Loaded ${file.name}`);
+      return;
+    }
+  } catch(e){
+    logDebug('Strategy A failed: ' + (e && e.message || e));
+  }
+
+  // Try B: dataURL
+  try {
+    const img = await tryWithDataURL(file);
+    if(drawToCanvas(img, beforeCanvas)){
+      editingImage = img;
+      pushHistory();
+      setStatus(`Loaded ${file.name} (dataURL)`);
+      return;
+    }
+  } catch(e){
+    logDebug('Strategy B failed: ' + (e && e.message || e));
+  }
+
+  // Try C: ImageBitmap
+  try {
+    const bmp = await tryWithBitmap(file);
+    // draw ImageBitmap
+    const ctx = beforeCanvas.getContext('2d');
+    beforeCanvas.width = bmp.width || Math.max(200, bmp.width || 200);
+    beforeCanvas.height = bmp.height || Math.max(200, bmp.height || 200);
+    ctx.clearRect(0,0,beforeCanvas.width,beforeCanvas.height);
+    ctx.drawImage(bmp, 0, 0, beforeCanvas.width, beforeCanvas.height);
+    try{ bmp.close && bmp.close(); }catch(e){}
+    editingImage = null;
+    pushHistory();
+    setStatus(`Loaded ${file.name} (bitmap)`);
+    return;
+  } catch(e){
+    logDebug('Strategy C failed: ' + (e && e.message || e));
+  }
+
+  // Try D: rebuild then retry A/B/C
+  try {
+    const rebuilt = await rebuildBlob(file);
+    // A
+    try {
+      const img = await tryWithObjectURL(rebuilt);
+      if(drawToCanvas(img, beforeCanvas)){
+        editingImage = img; pushHistory(); setStatus(`Loaded ${file.name} (rebuilt)`); return;
+      }
+    } catch(e){ logDebug('Rebuilt-A failed'); }
+    // B
+    try {
+      const img = await tryWithDataURL(rebuilt);
+      if(drawToCanvas(img, beforeCanvas)){
+        editingImage = img; pushHistory(); setStatus(`Loaded ${file.name} (rebuilt dataURL)`); return;
+      }
+    } catch(e){ logDebug('Rebuilt-B failed'); }
+    // C
+    try {
+      const bmp = await tryWithBitmap(rebuilt);
+      const ctx = beforeCanvas.getContext('2d');
+      beforeCanvas.width = bmp.width || 200; beforeCanvas.height = bmp.height || 200;
+      ctx.drawImage(bmp,0,0,beforeCanvas.width,beforeCanvas.height);
+      try{ bmp.close && bmp.close(); }catch(e){}
+      editingImage = null; pushHistory(); setStatus(`Loaded ${file.name} (rebuilt bitmap)`); return;
+    } catch(e){ logDebug('Rebuilt-C failed'); }
+  } catch(e){
+    logDebug('Rebuild failed: ' + e);
+  }
+
+  setStatus('Failed to load image', true);
+  logDebug('All decoding strategies failed');
+}
+
+/* ----- File selection / drop ----- */
+fileInput && fileInput.addEventListener('change', async (e)=>{
+  const f = e.target.files?.[0];
+  if(!f){ setStatus('No file selected', true); return; }
+  // try repair for JPEG small corruption events
+  if(f.type === 'image/jpeg' && f.size > 0 && f.size < 100){
+    setStatus('File appears corrupted (too small)', true); return;
+  }
+  try {
+    if(f.type === 'image/jpeg'){
+      setStatus('Attempting JPEG repair...');
+      try {
+        const repaired = await cleanImageBlob(f);
+        currentFile = repaired instanceof Blob ? new File([repaired], f.name, { type: 'image/jpeg' }) : f;
+      } catch(e){
+        currentFile = f;
+        logDebug('JPEG repair failed: ' + e);
+      }
+    } else {
+      currentFile = f;
+    }
+    // put file into batch list as well
+    files = [ currentFile ];
+    currentIndex = 0;
+    clearBatchBtn.disabled = false;
+    downloadZipBtn.disabled = files.length === 0;
+    // preview
+    await loadAndPreviewFile(currentFile);
+    processBtn.disabled = false;
+    cropBtn.disabled = false;
+  } catch(e){
+    setStatus('Error handling file', true);
+    logDebug(e);
+  }
+});
+
+dropZone && dropZone.addEventListener('dragover', (ev)=>{ ev.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone && dropZone.addEventListener('dragleave', (ev)=>{ ev.preventDefault(); dropZone.classList.remove('dragover'); });
+dropZone && dropZone.addEventListener('drop', async (ev)=>{
+  ev.preventDefault(); dropZone.classList.remove('dragover');
+  const list = Array.from(ev.dataTransfer?.files || []);
+  if(list.length === 0) return;
+  // validate & keep only images
+  files = list.filter(f => validateFile(f).valid);
+  if(files.length === 0){ setStatus('No valid images dropped', true); return; }
+  currentIndex = 0; currentFile = files[0];
+  clearBatchBtn.disabled = false;
+  downloadZipBtn.disabled = false;
+  await loadAndPreviewFile(currentFile);
+  processBtn.disabled = false;
+  cropBtn.disabled = false;
+});
+
+/* ----- Crop (toggle) ----- */
+cropBtn && cropBtn.addEventListener('click', ()=>{
+  if(!editingImage && !currentFile){ setStatus('No image to crop', true); return; }
+  if(!cropper){
+    cropper = new Cropper(beforeCanvas);
+  }
+  if(!cropMode){
+    // start a default crop area or rely on Cropper internal default
+    try {
+      const w = Math.min( Math.round(beforeCanvas.width * 0.6), 300 );
+      const h = Math.min( Math.round(beforeCanvas.height * 0.6), 300 );
+      cropper.start({ x: 20, y: 20, w: w, h: h });
+    } catch(e){}
+    cropMode = true;
+    cropBtn.textContent = 'Apply Crop';
+    setStatus('Crop mode: adjust and click Apply Crop');
+  } else {
+    // apply crop using cropper.rect (conservative: check presence)
+    try {
+      const r = cropper && cropper.rect;
+      if(!r){ setStatus('No crop rectangle found', true); cropMode=false; cropBtn.textContent='Crop'; return; }
+      // draw cropped region to beforeCanvas
+      const ctx = beforeCanvas.getContext('2d');
+      const temp = document.createElement('canvas');
+      temp.width = r.w; temp.height = r.h;
+      const tctx = temp.getContext('2d');
+      tctx.drawImage(beforeCanvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+      // replace beforeCanvas
+      beforeCanvas.width = temp.width; beforeCanvas.height = temp.height;
+      ctx.clearRect(0,0,beforeCanvas.width,beforeCanvas.height);
+      ctx.drawImage(temp,0,0);
+      // reset editingImage and history
+      editingImage = null;
+      pushHistory();
+      setStatus('Crop applied');
+    } catch(e){
+      logDebug('Crop apply failed: ' + e);
+      setStatus('Crop failed', true);
+    }
+    cropMode = false;
+    cropBtn.textContent = 'Crop';
+  }
+});
+
+/* ----- Undo / Redo ----- */
+undoBtn && undoBtn.addEventListener('click', ()=>{ undo(); setStatus('Undid'); });
+redoBtn && redoBtn.addEventListener('click', ()=>{ redo(); setStatus('Redid'); });
+
+/* ----- Reset / Clear Batch ----- */
+resetBtn && resetBtn.addEventListener('click', ()=>{
+  try {
+    const ctx = beforeCanvas.getContext('2d'); ctx.clearRect(0,0,beforeCanvas.width,beforeCanvas.height);
+    const ctx2 = afterCanvas.getContext('2d'); ctx2.clearRect(0,0,afterCanvas.width,afterCanvas.height);
+  } catch(e){}
+  files = []; currentFile = null; editingImage = null; latestProcessedFile = null;
+  historyStack = []; historyIndex = -1; updateUndoRedoButtons();
+  processBtn.disabled = true; downloadBtn.disabled = true; downloadZipBtn.disabled = true; clearBatchBtn.disabled = true;
+  setStatus('Reset complete');
+});
+
+/* Clear batch (keep preview) */
+clearBatchBtn && clearBatchBtn.addEventListener('click', ()=>{
+  files = []; clearBatchBtn.disabled = true; downloadZipBtn.disabled = true;
+  setStatus('Batch cleared');
+});
+
+/* ----- Zoom slider (CSS scale preview) ----- */
+if(zoomSlider){
+  zoomSlider.addEventListener('input', ()=> {
+    const v = parseFloat(zoomSlider.value);
+    // map slider [0..100] to scale [0.5..2.0] for example (adjustable)
+    const scale = 0.5 + (v/100) * 1.5;
+    beforeCanvas.style.transformOrigin = 'top left';
+    beforeCanvas.style.transform = `scale(${scale})`;
+  });
+}
+
+/* ----- Processing (single) ----- */
+processBtn && processBtn.addEventListener('click', async ()=>{
+  if(!currentFile){ setStatus('Upload a file first', true); return; }
+  setStatus('Processing...');
+  processBtn.disabled = true; downloadBtn.disabled = true;
+  try {
+    // Determine preset (string key)
+    const preset = presetSelect ? presetSelect.value : 'nsdl';
+    const resultBlob = await processFile(currentFile, preset);
+    if(!resultBlob || !(resultBlob instanceof Blob)){ throw new Error('processFile did not return Blob'); }
+    // store File for download
+    const outName = currentFile.name ? ('processed-' + currentFile.name) : ('processed.jpg');
+    latestProcessedFile = new File([resultBlob], outName, { type: resultBlob.type || 'image/jpeg' });
+    window._latestProcessedFile = latestProcessedFile; // global helper
+    // preview processed image
+    let previewOk = false;
+    try {
+      const url = URL.createObjectURL(resultBlob);
+      const img = new Image();
+      img.onload = ()=> { drawToCanvas(img, afterCanvas); safeRevoke(url); previewOk = true; setStatus('Done'); };
+      img.onerror = async ()=>{
+        safeRevoke(url);
+        // fallback to bitmap
+        try {
+          if(typeof createImageBitmap === 'function'){
+            const bmp = await createImageBitmap(resultBlob);
+            drawToCanvas(bmp, afterCanvas);
+            try{ bmp.close && bmp.close(); }catch(e){}
+            previewOk = true; setStatus('Done');
+          } else {
+            setStatus('Processed but preview failed', false);
+          }
+        } catch(e){
+          setStatus('Processed but preview failed', false);
+        }
+      };
+      img.src = url;
+    } catch(e){
+      logDebug('Processed preview error: ' + e);
+      setStatus('Processed but preview failed', false);
+    }
+    downloadBtn.disabled = false;
+  } catch(err){
+    logDebug('Processing error: ' + err);
+    setStatus('Processing error', true);
+  } finally {
+    processBtn.disabled = false;
+  }
+});
+
+/* ----- Download single file ----- */
+downloadBtn && downloadBtn.addEventListener('click', ()=>{
+  const file = latestProcessedFile || window._latestProcessedFile;
+  if(!file){ setStatus('No processed file to download', true); return; }
+  const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'pan-photos.zip';
+  a.download = file.name || 'processed.jpg';
+  document.body.appendChild(a);
   a.click();
-  setTimeout(()=>safeRevoke(url), 60_000);
-  logStatus('Batch ready');
-}
+  a.remove();
+  safeRevoke(url);
+  setStatus('Download started');
+});
 
-// Drag & drop setup
-function setupDragDrop(){
-  if(!dropZone) return;
-  ['dragenter','dragover'].forEach(evt=> dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
-  ['dragleave','drop'].forEach(evt=> dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
-  dropZone.addEventListener('drop', async e => {
-    const dt = e.dataTransfer;
-    if(!dt) return;
-    const fls = Array.from(dt.files || []);
-    await handleFilesAdded(fls);
-  });
-}
-
-// handle file input selection
-async function handleFilesAdded(fileList){
-  for(const f of fileList){
-    try{
-      const v = validator.validate(f);
-      if(!v.ok) { logStatus(v.msg, true); continue; }
-      files.push({ file: f, name: f.name });
-    }catch(e){ console.error(e); }
-  }
-  if(files.length>0){
-    currentIndex = 0;
-    await loadAndPreviewFile(files[currentIndex]);
-    processBtn.disabled = false;
-    batchZipBtn.disabled = files.length < 2;
-  }
-}
-
-// UI wiring
-function wireUi(){
-  if (fileInput) fileInput.addEventListener('change', async e => {
-    const fls = Array.from(e.target.files || []);
-    await handleFilesAdded(fls);
-  });
-  if (processBtn) processBtn.addEventListener('click', processCurrentFile);
-  if (batchZipBtn) batchZipBtn.addEventListener('click', downloadBatchZip);
-  if (downloadBtn) downloadBtn.addEventListener('click', () => {
-    const url = downloadBtn.dataset.blobUrl;
-    const name = downloadBtn.dataset.fileName || 'output.jpg';
-    if (!url) { logStatus('Nothing to download', true); return; }
+/* ----- Download ZIP (batch) ----- */
+downloadZipBtn && downloadZipBtn.addEventListener('click', async ()=>{
+  if(!files || files.length === 0){ setStatus('No batch files to process', true); return; }
+  setStatus('Processing batch – creating ZIP...');
+  downloadZipBtn.disabled = true; clearBatchBtn.disabled = true;
+  try {
+    // lazy-check for JSZip available
+    if(typeof JSZip === 'undefined'){ setStatus('JSZip not available', true); downloadZipBtn.disabled = false; return; }
+    const zip = new JSZip();
+    for(let i=0;i<files.length;i++){
+      const f = files[i];
+      setStatus(`Processing ${i+1}/${files.length}: ${f.name}`);
+      try {
+        const blob = await processFile(f, presetSelect ? presetSelect.value : 'nsdl');
+        // ensure blob is blob
+        if(!(blob instanceof Blob)) throw new Error('processFile returned non-blob');
+        zip.file(`processed-${f.name}`, blob);
+      } catch(err){
+        logDebug('Batch item failed: ' + (err && err.message || err));
+        // still continue next files
+      }
+    }
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
     const a = document.createElement('a');
     a.href = url;
-    a.download = name;
+    a.download = `pan-photos-${Date.now()}.zip`;
+    document.body.appendChild(a);
     a.click();
-    setTimeout(()=>safeRevoke(url), 60_000);
-  });
-  if (undoBtn) undoBtn.addEventListener('click', () => {
-    const s = undoHistory();
-    if (s) logStatus('Undo performed');
-  });
-  if (redoBtn) redoBtn.addEventListener('click', () => {
-    const s = redoHistory();
-    if (s) logStatus('Redo performed');
-  });
-  if (cropBtn) cropBtn.addEventListener('click', () => {
-    if (cropper && cropper.commit) {
-      cropper.commit();
-      pushHistory({ type:'crop', time: Date.now(), rect: cropper.getRect() });
-    }
-  });
-  setupDragDrop();
-}
+    a.remove();
+    safeRevoke(url);
+    setStatus('ZIP ready — download started');
+  } catch(e){
+    logDebug('Batch ZIP error: ' + e);
+    setStatus('Batch processing failed', true);
+  } finally {
+    downloadZipBtn.disabled = false; clearBatchBtn.disabled = false;
+  }
+});
 
-// init presets dropdown
-function initPresets(){
-  if(!presetSelect) return;
-  presetSelect.innerHTML = '';
-  Object.keys(PRESETS).forEach(k => {
-    const opt = document.createElement('option');
-    opt.value = k;
-    opt.textContent = k;
-    presetSelect.appendChild(opt);
-  });
-}
-
-// init
+/* ----- Initial setup ----- */
 (function init(){
-  initPresets();
-  wireUi();
-  logStatus('Ready');
+  processBtn.disabled = true;
+  downloadBtn.disabled = true;
+  downloadZipBtn.disabled = true;
+  clearBatchBtn.disabled = true;
+  cropBtn.disabled = true;
+  undoBtn.disabled = true;
+  redoBtn.disabled = true;
+  setStatus('Ready');
+  // ensure canvases visible and a minimum size
+  try {
+    beforeCanvas.style.display = 'block';
+    afterCanvas.style.display = 'block';
+    if(beforeCanvas.width === 0) { beforeCanvas.width = 320; beforeCanvas.height = 240; }
+    if(afterCanvas.width === 0) { afterCanvas.width = 320; afterCanvas.height = 240; }
+  } catch(e){}
 })();
-
-export { loadAndPreviewFile, processCurrentFile, pushHistory, undoHistory, redoHistory };
